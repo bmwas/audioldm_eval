@@ -2,19 +2,48 @@
 
 This toolbox aims to unify audio generation model evaluation for easier future comparison.
 
-## Quick Start
+## Installation
 
-First, prepare the environment
+### Method 1: Direct installation (if no issues)
 ```shell
 pip install git+https://github.com/haoheliu/audioldm_eval
 ```
 
-Second, generate test dataset by
+### Method 2: Virtual environment installation (Recommended)
+
+If you encounter MySQL-python/ConfigParser issues during installation, use this method:
+
+```shell
+# Create and activate virtual environment (Python 3.10 recommended)
+python3.10 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install ssr_eval without dependencies to avoid MySQL-python issues
+pip install ssr_eval --no-deps
+
+# Clone and install the repository
+git clone https://github.com/haoheliu/audioldm_eval.git
+cd audioldm_eval
+pip install -e . --no-deps
+
+# Install remaining dependencies
+pip install torch torchaudio transformers scikit-image torchlibrosa absl-py scipy tqdm librosa
+```
+
+### Known Installation Issues
+
+**Issue**: `ModuleNotFoundError: No module named 'ConfigParser'`
+- **Cause**: The `ssr_eval` dependency chain includes `MySQL-python`, which is Python 2 only
+- **Solution**: Use Method 2 above with `pip install ssr_eval --no-deps`
+
+## Quick Start
+
+After installation, generate test dataset:
 ```shell
 python3 gen_test_file.py
 ```
 
-Finally, perform a test run. A result for reference is attached [here](https://github.com/haoheliu/audioldm_eval/blob/main/example/paired_ref.json).
+Then perform a test run. A result for reference is attached [here](https://github.com/haoheliu/audioldm_eval/blob/main/example/paired_ref.json).
 ```shell
 python3 test.py # Evaluate and save the json file to disk (example/paired.json)
 ```
@@ -64,13 +93,17 @@ generation_result_path = "example/paired"
 target_audio_path = "example/reference"
 
 # Initialize a helper instance
-evaluator = EvaluationHelper(16000, device)
+# Note: EvaluationHelper now requires a backbone parameter
+evaluator = EvaluationHelper(
+    sampling_rate=16000, 
+    device=device,
+    backbone="cnn14"  # `cnn14` refers to PANNs model, `mert` refers to MERT model
+)
 
 # Perform evaluation, result will be print out and saved as json
 metrics = evaluator.main(
     generation_result_path,
     target_audio_path,
-    backbone="cnn14", # `cnn14` refers to PANNs model, `mert` refers to MERT model
     limit_num=None # If you only intend to evaluate X (int) pairs of data, set limit_num=X
 )
 ```
@@ -86,11 +119,14 @@ generation_result_path = "example/paired"
 target_audio_path = "example/reference"
 
 if __name__ == '__main__':    
-    evaluator = EvaluationHelperParallel(16000, 2) # 2 denotes number of GPUs
+    evaluator = EvaluationHelperParallel(
+        sampling_rate=16000, 
+        num_gpus=2,  # 2 denotes number of GPUs
+        backbone="cnn14"  # `cnn14` refers to PANNs model, `mert` refers to MERT model
+    )
     metrics = evaluator.main(
         generation_result_path,
         target_audio_path,
-        backbone="cnn14", # `cnn14` refers to PANNs model, `mert` refers to MERT model
         limit_num=None # If you only intend to evaluate X (int) pairs of data, set limit_num=X
     )
 ```
@@ -101,7 +137,164 @@ You can use `CUDA_VISIBLE_DEVICES` to specify the GPU/GPUs to use.
 CUDA_VISIBLE_DEVICES=0,1 python3 test.py
 ```
 
+## Troubleshooting
+
+### Common Installation Issues
+
+**1. ModuleNotFoundError: No module named 'ConfigParser'**
+```
+ModuleNotFoundError: No module named 'ConfigParser'
+```
+- **Cause**: The `ssr_eval` dependency includes `MySQL-python`, which is Python 2 only and imports `ConfigParser` (renamed to `configparser` in Python 3)
+- **Solution**: Use the virtual environment installation method above with `pip install ssr_eval --no-deps`
+
+**2. TypeError: EvaluationHelper() missing required argument**
+```
+TypeError: EvaluationHelper.__init__() missing 1 required positional argument: 'backbone'
+```
+- **Cause**: The `EvaluationHelper` API has been updated to require a `backbone` parameter
+- **Solution**: Update your code to include the backbone parameter:
+  ```python
+  # Old (no longer works)
+  evaluator = EvaluationHelper(16000, device)
+  
+  # New (correct)
+  evaluator = EvaluationHelper(sampling_rate=16000, device=device, backbone="cnn14")
+  ```
+
+### Supported Backbone Models
+- `"cnn14"`: PANNs model (recommended)
+- `"mert"`: MERT model for music understanding
+
+## Docker API Usage
+
+### Building the Docker Image
+
+To build the Docker image for the AudioLDM Evaluation API:
+
+```bash
+# Build the Docker image
+docker build -t ghcr.io/bmwas/audiollmtest:latest .
+
+# Or build with custom base image
+docker build --build-arg BASE_IMAGE=nvcr.io/nvidia/cuda:12.9.1-devel-ubuntu22.04 -t ghcr.io/bmwas/audiollmtest:latest .
+```
+
+### Running the Docker Container
+
+#### Basic Run (CPU only)
+```bash
+docker run -p 2600:2600 ghcr.io/bmwas/audiollmtest:latest
+```
+
+#### GPU-enabled Run (Recommended)
+```bash
+# For NVIDIA GPUs with Docker >= 19.03
+docker run --gpus all -p 2600:2600 ghcr.io/bmwas/audiollmtest:latest
+
+# Or specify a specific GPU
+docker run --gpus device=0 -p 2600:2600 ghcr.io/bmwas/audiollmtest:latest
+
+# With persistent volumes for uploads and results
+docker run --gpus all -p 2600:2600 \
+  -v $(pwd)/uploads:/app/uploads \
+  -v $(pwd)/results:/app/results \
+  ghcr.io/bmwas/audiollmtest:latest
+```
+
+#### Environment Variables
+```bash
+# Run with custom settings
+docker run --gpus all -p 2600:2600 \
+  -e CUDA_VISIBLE_DEVICES=0 \
+  -e PYTHONUNBUFFERED=1 \
+  ghcr.io/bmwas/audiollmtest:latest
+```
+
+### API Endpoints
+
+Once the container is running, the API will be available at `http://localhost:2600`
+
+#### Available Endpoints:
+
+- **GET** `/` - API information and available endpoints
+- **GET** `/health` - Health check with CUDA status
+- **GET** `/metrics` - List all available evaluation metrics
+- **GET** `/backbones` - List available backbone models
+- **POST** `/evaluate` - Submit audio files for evaluation
+- **GET** `/jobs/{job_id}` - Get evaluation results by job ID
+- **GET** `/jobs` - List all evaluation jobs
+- **GET** `/docs` - Interactive API documentation (Swagger UI)
+
+#### Example API Usage
+
+**1. Check API Health:**
+```bash
+curl http://localhost:2600/health
+```
+
+**2. Get Available Metrics:**
+```bash
+curl http://localhost:2600/metrics
+```
+
+**3. Submit Evaluation Job:**
+```bash
+# Upload audio files for evaluation
+curl -X POST "http://localhost:2600/evaluate" \
+  -F "generated_files=@path/to/generated1.wav" \
+  -F "generated_files=@path/to/generated2.wav" \
+  -F "reference_files=@path/to/reference1.wav" \
+  -F "reference_files=@path/to/reference2.wav" \
+  -F "backbone=cnn14" \
+  -F "sampling_rate=16000" \
+  -F "metrics=FAD,ISc,FD"
+```
+
+**4. Check Job Status:**
+```bash
+# Replace JOB_ID with the actual job ID returned from evaluation
+curl http://localhost:2600/jobs/JOB_ID
+```
+
+### Testing the API
+
+Use the provided test script to verify the API is working correctly:
+
+```bash
+# Install test dependencies (if not in virtual environment)
+pip install requests soundfile numpy
+
+# Run the test script
+python test_api.py
+
+# Or use the test runner script
+./run_test.sh
+
+# Test with custom parameters
+python test_api.py --api-url http://localhost:2600 --num-files 5
+```
+
+### API Features
+
+- **Paired and Unpaired Evaluation**: Automatically detects evaluation mode based on file names and counts
+- **All AudioLDM Metrics**: Supports FAD, ISc, FD, KID, KL, KL_Sigmoid, PSNR, SSIM, LSD
+- **Multiple Backbones**: Choose between CNN14 (PANNs) and MERT models
+- **Batch Processing**: Upload multiple files in a single request
+- **Job Tracking**: Persistent job storage with unique IDs
+- **CUDA Support**: GPU acceleration when available
+- **Interactive Documentation**: Swagger UI at `/docs` endpoint
+
+### Metric Limitations
+
+- **Paired Mode Only**: KL, KL_Sigmoid, PSNR, SSIM, LSD metrics require paired evaluation (same number of files with matching names)
+- **Unpaired Mode**: FAD, ISc, FD, KID work with different numbers of files or mismatched names
+- **Recommended Metrics**: FAD (quality) and ISc (diversity) are recommended for most use cases
+
 ## Note
+- **Installation and API Updates:**
+  - **Installation Issues**: If you encounter `ModuleNotFoundError: No module named 'ConfigParser'`, use the virtual environment installation method with `pip install ssr_eval --no-deps`
+  - **EvaluationHelper API Change**: The `EvaluationHelper` class now requires a `backbone` parameter in its constructor. Use `backbone="cnn14"` for PANNs model or `backbone="mert"` for MERT model.
 - Update on 29 Sept 2024:
   - **MERT inference:** Note that the MERT model is trained on 24 kHz, but the repository inference in either 16 kHz or 32 kHz mode. In both modes, we resample the audio to 24 kHz.
   - **FAD calculation:** The FAD calculation currently even in the parallel mode will only be done on the first GPU, due to the implementation we currently use.
