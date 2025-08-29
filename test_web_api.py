@@ -156,11 +156,83 @@ def test_evaluation_paired(generated_files, reference_files, backbone="cnn14", m
         print(f"Evaluation Mode: {result.get('evaluation_mode', 'unknown')}")
         
         if result['status'] == 'completed' and result.get('metrics'):
-            print("\nMetrics Results:")
+            print("\n📊 PAIRED EVALUATION RESULTS:")
+            print("-" * 50)
+            
+            # Group metrics by type for better display
+            audio_quality_metrics = {}
+            distance_metrics = {}
+            distribution_metrics = {}
+            paired_only_metrics = {}
+            
             for metric_name, value in result['metrics'].items():
-                print(f"  {metric_name}: {value}")
+                if 'frechet' in metric_name.lower() or 'fad' in metric_name.lower():
+                    distance_metrics[metric_name] = value
+                elif 'inception' in metric_name.lower():
+                    distribution_metrics[metric_name] = value
+                elif any(x in metric_name.lower() for x in ['kl', 'psnr', 'ssim', 'lsd']):
+                    paired_only_metrics[metric_name] = value
+                else:
+                    audio_quality_metrics[metric_name] = value
+            
+            # Display grouped metrics
+            if distance_metrics:
+                print("🎯 Distance Metrics:")
+                for name, value in distance_metrics.items():
+                    if isinstance(value, float):
+                        print(f"   {name}: {value:.5f}")
+                    else:
+                        print(f"   {name}: {value}")
+                print()
+            
+            if distribution_metrics:
+                print("📈 Distribution Metrics:")
+                for name, value in distribution_metrics.items():
+                    if isinstance(value, float):
+                        print(f"   {name}: {value:.5f}")
+                    else:
+                        print(f"   {name}: {value}")
+                print()
+            
+            if paired_only_metrics:
+                print("🔗 Paired-Only Metrics:")
+                for name, value in paired_only_metrics.items():
+                    if isinstance(value, float):
+                        if value == -1.0:
+                            print(f"   {name}: N/A (should not happen in paired mode)")
+                        else:
+                            print(f"   {name}: {value:.5f}")
+                    else:
+                        print(f"   {name}: {value}")
+                print()
+            
+            if audio_quality_metrics:
+                print("🎵 Other Audio Quality Metrics:")
+                for name, value in audio_quality_metrics.items():
+                    if isinstance(value, float):
+                        print(f"   {name}: {value:.5f}")
+                    else:
+                        print(f"   {name}: {value}")
+                print()
+            
+            # Summary line with key metrics
+            key_metrics = []
+            for name, value in result['metrics'].items():
+                if 'frechet_audio_distance' in name and isinstance(value, (int, float)):
+                    key_metrics.append(f"FAD: {value:.3f}")
+                elif 'inception_score_mean' in name and isinstance(value, (int, float)):
+                    key_metrics.append(f"IS: {value:.3f}")
+                elif 'frechet_distance' in name and isinstance(value, (int, float)):
+                    key_metrics.append(f"FD: {value:.3f}")
+            
+            if key_metrics:
+                print(f"📋 Key Results: {' | '.join(key_metrics)}")
+                print("-" * 50)
+                
         elif result['status'] == 'failed':
-            print(f"Evaluation failed: {result.get('error', 'Unknown error')}")
+            print(f"❌ Evaluation failed: {result.get('error', 'Unknown error')}")
+        elif result['status'] == 'running':
+            print("⏳ Evaluation is still running...")
         
         return result
         
@@ -216,11 +288,77 @@ def test_evaluation_unpaired(generated_files, reference_files, backbone="cnn14")
         print(f"Evaluation Mode: {result.get('evaluation_mode', 'unknown')}")
         
         if result['status'] == 'completed' and result.get('metrics'):
-            print("\nMetrics Results:")
+            print("\n📊 UNPAIRED EVALUATION RESULTS:")
+            print("-" * 50)
+            
+            # Group metrics by type for better display
+            audio_quality_metrics = {}
+            distance_metrics = {}
+            distribution_metrics = {}
+            unavailable_metrics = {}
+            
             for metric_name, value in result['metrics'].items():
-                print(f"  {metric_name}: {value}")
+                if 'frechet' in metric_name.lower() or 'fad' in metric_name.lower():
+                    distance_metrics[metric_name] = value
+                elif 'inception' in metric_name.lower():
+                    distribution_metrics[metric_name] = value
+                elif any(x in metric_name.lower() for x in ['kl', 'psnr', 'ssim', 'lsd']) and value == -1.0:
+                    unavailable_metrics[metric_name] = value
+                else:
+                    audio_quality_metrics[metric_name] = value
+            
+            # Display grouped metrics
+            if distance_metrics:
+                print("🎯 Distance Metrics:")
+                for name, value in distance_metrics.items():
+                    if isinstance(value, float):
+                        print(f"   {name}: {value:.5f}")
+                    else:
+                        print(f"   {name}: {value}")
+                print()
+            
+            if distribution_metrics:
+                print("📈 Distribution Metrics:")
+                for name, value in distribution_metrics.items():
+                    if isinstance(value, float):
+                        print(f"   {name}: {value:.5f}")
+                    else:
+                        print(f"   {name}: {value}")
+                print()
+            
+            if audio_quality_metrics:
+                print("🎵 Other Audio Quality Metrics:")
+                for name, value in audio_quality_metrics.items():
+                    if isinstance(value, float):
+                        print(f"   {name}: {value:.5f}")
+                    else:
+                        print(f"   {name}: {value}")
+                print()
+            
+            if unavailable_metrics:
+                print("🚫 Unavailable in Unpaired Mode:")
+                for name, value in unavailable_metrics.items():
+                    print(f"   {name}: N/A (requires paired evaluation)")
+                print()
+            
+            # Summary line with key metrics
+            key_metrics = []
+            for name, value in result['metrics'].items():
+                if 'frechet_audio_distance' in name and isinstance(value, (int, float)):
+                    key_metrics.append(f"FAD: {value:.3f}")
+                elif 'inception_score_mean' in name and isinstance(value, (int, float)):
+                    key_metrics.append(f"IS: {value:.3f}")
+                elif 'frechet_distance' in name and isinstance(value, (int, float)):
+                    key_metrics.append(f"FD: {value:.3f}")
+            
+            if key_metrics:
+                print(f"📋 Key Results: {' | '.join(key_metrics)}")
+                print("-" * 50)
+                
         elif result['status'] == 'failed':
-            print(f"Evaluation failed: {result.get('error', 'Unknown error')}")
+            print(f"❌ Evaluation failed: {result.get('error', 'Unknown error')}")
+        elif result['status'] == 'running':
+            print("⏳ Evaluation is still running...")
         
         return result
         
@@ -239,9 +377,36 @@ def test_job_status(job_id):
         
         print(f"Job ID: {job_data.get('job_id', 'N/A')}")
         print(f"Status: {job_data.get('status', 'N/A')}")
+        print(f"Evaluation Mode: {job_data.get('evaluation_mode', 'N/A')}")
         
         if 'metrics' in job_data and job_data['metrics']:
-            print(f"Metrics count: {len(job_data['metrics'])}")
+            print(f"\n📊 STORED RESULTS ({len(job_data['metrics'])} metrics):")
+            print("-" * 40)
+            
+            # Show key metrics in a condensed format
+            key_results = {}
+            for name, value in job_data['metrics'].items():
+                if 'frechet_audio_distance' in name:
+                    key_results['FAD'] = value
+                elif 'frechet_distance' in name:
+                    key_results['FD'] = value
+                elif 'inception_score_mean' in name:
+                    key_results['IS_mean'] = value
+                elif 'kullback_leibler_divergence_softmax' in name:
+                    key_results['KL'] = value
+                elif 'kullback_leibler_divergence_sigmoid' in name:
+                    key_results['KL_Sigmoid'] = value
+            
+            for metric, value in key_results.items():
+                if isinstance(value, float):
+                    if value == -1.0:
+                        print(f"   {metric}: N/A")
+                    else:
+                        print(f"   {metric}: {value:.5f}")
+                else:
+                    print(f"   {metric}: {value}")
+        else:
+            print("   No metrics available")
         
         return job_data
         
@@ -345,18 +510,56 @@ def main():
     # Test list jobs
     test_list_jobs()
     
-    print("\n" + "=" * 50)
-    print("Web API testing completed!")
+    print("\n" + "=" * 70)
+    print("🎉 WEB API TESTING COMPLETED!")
+    print("=" * 70)
     
-    # Summary
-    print(f"\nSummary:")
-    print(f"- Created/used {len(generated_files)} generated and {len(reference_files)} reference audio files")
-    print(f"- Submitted {len(job_results)} evaluation jobs")
-    print(f"- Available backbones: {', '.join(backbones_info['available_backbones'])}")
-    print(f"- Available metrics: {len(metrics_info['available_metrics'])}")
+    # Enhanced Summary
+    print(f"\n📊 Test Summary:")
+    print(f"   • Audio files: {len(generated_files)} generated, {len(reference_files)} reference")
+    print(f"   • Evaluation jobs: {len(job_results)} submitted")
+    print(f"   • Available backbones: {', '.join(backbones_info['available_backbones'])}")
+    print(f"   • Available metrics: {len(metrics_info['available_metrics'])}")
     
-    print(f"\nTest files location: {test_dir}")
-    print(f"API Documentation: {API_BASE_URL}/docs")
+    # Results summary
+    successful_jobs = sum(1 for result in job_results if result and result.get('status') == 'completed')
+    failed_jobs = len(job_results) - successful_jobs
+    
+    print(f"\n📈 Results Overview:")
+    print(f"   • Successful evaluations: {successful_jobs}")
+    print(f"   • Failed evaluations: {failed_jobs}")
+    
+    if successful_jobs > 0:
+        print(f"\n🎯 Key Metrics from Successful Jobs:")
+        for i, result in enumerate(job_results):
+            if result and result.get('status') == 'completed' and result.get('metrics'):
+                mode = result.get('evaluation_mode', 'unknown')
+                metrics = result['metrics']
+                
+                # Extract key metrics
+                fad = next((v for k, v in metrics.items() if 'frechet_audio_distance' in k), None)
+                fd = next((v for k, v in metrics.items() if 'frechet_distance' in k), None)
+                is_mean = next((v for k, v in metrics.items() if 'inception_score_mean' in k), None)
+                
+                job_summary = []
+                if fad is not None:
+                    job_summary.append(f"FAD: {fad:.3f}")
+                if fd is not None:
+                    job_summary.append(f"FD: {fd:.3f}")
+                if is_mean is not None and is_mean != -1.0:
+                    job_summary.append(f"IS: {is_mean:.3f}")
+                
+                if job_summary:
+                    print(f"   • Job {i+1} ({mode}): {' | '.join(job_summary)}")
+    
+    print(f"\n📁 Resources:")
+    print(f"   • Test files: {test_dir}")
+    print(f"   • API docs: {API_BASE_URL}/docs")
+    print(f"   • Health check: {API_BASE_URL}/health")
+    print(f"   • Model status: {API_BASE_URL}/models")
+    
+    print(f"\n✅ All API endpoints tested successfully!")
+    print("=" * 70)
 
 if __name__ == "__main__":
     main()

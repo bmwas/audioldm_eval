@@ -304,6 +304,123 @@ python test_api.py --api-url http://localhost:2600 --num-files 5
 
   - **Update on code:** The calculation of FAD is slow. Now, after each calculation of a folder, the code will save the FAD feature into an .npy file for later reference. 
 
+## 📊 API Metric Interpretation
+
+### Expected NaN Values
+Some metrics may return `nan` values in certain scenarios - this is **normal behavior**:
+
+- **PSNR, SSIM, LSD**: Only available in **paired mode** (same filenames)
+- **KL, KL_Sigmoid**: Only available in **paired mode** 
+- **ISc (Inception Score)**: May return `nan` with very small sample sizes (< 3 files)
+- **KID**: May return `nan` with insufficient data
+
+### Successful Evaluation Example
+```json
+{
+  "job_id": "abc123...",
+  "status": "completed",
+  "metrics": {
+    "frechet_audio_distance": 4.62015,
+    "frechet_distance": 15.50206,
+    "kullback_leibler_divergence_sigmoid": 0.00214,
+    "kullback_leibler_divergence_softmax": 0.25198,
+    "inception_score_mean": 1.01896,
+    "inception_score_std": 0.005161
+  },
+  "evaluation_mode": "paired"
+}
+```
+
+## ⚠️ Expected Warnings
+
+You may see these **harmless** deprecation warnings in the logs:
+```
+UserWarning: In 2.9, this function's implementation will be changed to use torchaudio.load_with_torchcodec
+UserWarning: torio.io._streaming_media_decoder.StreamingMediaDecoder has been deprecated
+```
+
+These warnings are from TorchAudio and **do not affect functionality**. They can be safely ignored.
+
+## 🚀 Performance Expectations
+
+### Model Preloading (First Startup)
+- **Initial startup**: 60-120 seconds (downloads and loads all models)
+- **Subsequent startups**: 40-80 seconds (loads cached models)
+
+### API Response Times
+- **Preloaded models**: < 1 second model retrieval
+- **Evaluation computation**: 15-45 seconds (depends on audio length and file count)
+- **File upload**: Varies by file size and network
+
+### Expected Startup Logs
+```
+INFO:app.models - 🚀 Starting model preloading...
+INFO:app.models - CUDA device detected: NVIDIA RTX 4090
+INFO:app.models - 📦 [1/4] Loading cnn14 model (sr=16000)...
+INFO:app.models - ✅ cnn14 model (sr=16000) loaded and verified in 20.11s
+INFO:app.models - 🎉 Model preloading completed!
+INFO:app.models - 📊 Summary: 4 successful, 0 failed
+```
+
+## 📝 Comprehensive Logging
+
+The API includes extensive logging for monitoring and debugging:
+
+### Log Locations
+- **Console output**: Real-time monitoring
+- **Log file**: `/tmp/audioldm_api.log` (persistent storage)
+
+### Log Categories
+- **🚀 API Requests**: Request lifecycle and performance
+- **📦 Model Operations**: Loading, caching, and retrieval
+- **⬇️ Downloads**: Model download progress and verification
+- **📊 Performance**: Timing measurements and resource usage
+- **🔍 System**: Resource monitoring and health checks
+
+### Monitoring Examples
+```bash
+# Monitor API logs in real-time
+tail -f /tmp/audioldm_api.log
+
+# Check model preloading status
+curl http://10.4.11.192:2600/models
+
+# View system health
+curl http://10.4.11.192:2600/health
+```
+
+## 🔧 Production Deployment Notes
+
+### Resource Requirements
+- **GPU Memory**: 4GB+ recommended for model preloading
+- **RAM**: 8GB+ recommended for concurrent requests
+- **Disk Space**: 2GB+ for cached models
+
+### Performance Optimization
+1. **Model Preloading**: Always enabled by default for fast responses
+2. **Caching**: Models cached to `~/.cache/audioldm_eval/ckpt/`
+3. **Concurrent Requests**: API handles multiple evaluation jobs
+4. **Resource Monitoring**: Built-in system stats tracking
+
+### Health Monitoring
+```bash
+# Check API health
+curl http://10.4.11.192:2600/health
+
+# Expected healthy response:
+{
+  "status": "healthy",
+  "cuda_available": true,
+  "cuda_devices": 1,
+  "pytorch_version": "2.8.0+cu128",
+  "models": {
+    "preloaded": true,
+    "model_count": 4,
+    "loaded_models": ["cnn14_16000", "cnn14_32000", "mert_16000", "mert_32000"]
+  }
+}
+```
+
 ## TODO
 
 - [ ] Add pretrained AudioLDM model.

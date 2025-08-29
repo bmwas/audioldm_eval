@@ -50,7 +50,7 @@ RUN python3.10 -m venv venv && \
     # Install audio processing dependencies
     pip install resampy && \
     # Install API dependencies
-    pip install fastapi uvicorn python-multipart aiofiles
+    pip install fastapi uvicorn python-multipart aiofiles psutil
 
 # Create directories for uploads and results
 RUN mkdir -p /app/uploads /app/results

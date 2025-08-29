@@ -11,3 +11,6 @@ resampy>=0.4.2
 
 # For test script  
 requests>=2.31.0
+
+# System monitoring
+psutil>=5.9.0
