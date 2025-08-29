@@ -64,7 +64,7 @@ class Transfer_Cnn14(nn.Module):
         init_layer(self.fc_transfer)
 
     def load_from_pretrain(self, pretrained_checkpoint_path):
-        checkpoint = torch.load(pretrained_checkpoint_path)
+        checkpoint = torch.load(pretrained_checkpoint_path, weights_only=False)
         self.base.load_state_dict(checkpoint["model"])
 
     def forward(self, input, mixup_lambda=None):

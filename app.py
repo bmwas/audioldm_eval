@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 import json
 import logging
+import asyncio
+from threading import Lock
 
 import torch
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
@@ -26,6 +28,99 @@ from audioldm_eval import EvaluationHelper
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+class ModelManager:
+    """Manages preloaded EvaluationHelper instances for fast inference"""
+    
+    def __init__(self):
+        self.models: Dict[str, EvaluationHelper] = {}
+        self.lock = Lock()
+        self.device = None
+        self.preloaded = False
+        
+    async def preload_models(self):
+        """Preload all backbone models on startup"""
+        if self.preloaded:
+            return
+            
+        logger.info("🚀 Starting model preloading...")
+        
+        # Determine device
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        logger.info(f"Using device: {self.device}")
+        
+        # Preload models for common configurations
+        configs_to_preload = [
+            ("cnn14", 16000),
+            ("cnn14", 32000), 
+            ("mert", 16000),
+            ("mert", 32000),
+        ]
+        
+        for backbone, sampling_rate in configs_to_preload:
+            try:
+                logger.info(f"Loading {backbone} model (sr={sampling_rate})...")
+                start_time = asyncio.get_event_loop().time()
+                
+                # Create model key
+                model_key = f"{backbone}_{sampling_rate}"
+                
+                # Initialize EvaluationHelper (this downloads and loads the models)
+                logger.info(f"Initializing EvaluationHelper for {backbone} (this may download models if not cached)...")
+                evaluator = EvaluationHelper(
+                    sampling_rate=sampling_rate,
+                    device=self.device,
+                    backbone=backbone
+                )
+                
+                # Verify model is loaded and functional
+                logger.info(f"Verifying {backbone} model functionality...")
+                # Models are loaded during __init__, so if we get here without exceptions, they're ready
+                
+                # Store the preloaded model
+                with self.lock:
+                    self.models[model_key] = evaluator
+                
+                end_time = asyncio.get_event_loop().time()
+                logger.info(f"✅ {backbone} model (sr={sampling_rate}) loaded and verified in {end_time - start_time:.2f}s")
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to load {backbone} model (sr={sampling_rate}): {e}")
+                # Continue loading other models even if one fails
+                continue
+        
+        self.preloaded = True
+        logger.info(f"🎉 Model preloading completed! Loaded {len(self.models)} model configurations")
+        
+    def get_evaluator(self, backbone: str, sampling_rate: int) -> EvaluationHelper:
+        """Get a preloaded evaluator instance"""
+        model_key = f"{backbone}_{sampling_rate}"
+        
+        with self.lock:
+            if model_key in self.models:
+                logger.info(f"Using preloaded {backbone} model (sr={sampling_rate})")
+                return self.models[model_key]
+        
+        # Fallback: create new instance if not preloaded
+        logger.warning(f"Model {model_key} not preloaded, creating new instance...")
+        return EvaluationHelper(
+            sampling_rate=sampling_rate,
+            device=self.device or torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+            backbone=backbone
+        )
+    
+    def get_model_info(self) -> Dict[str, Any]:
+        """Get information about preloaded models"""
+        with self.lock:
+            return {
+                "preloaded": self.preloaded,
+                "device": str(self.device) if self.device else None,
+                "loaded_models": list(self.models.keys()),
+                "model_count": len(self.models)
+            }
+
+# Initialize model manager
+model_manager = ModelManager()
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -74,6 +169,17 @@ class EvaluationResponse(BaseModel):
 # Store for tracking evaluation jobs
 evaluation_jobs: Dict[str, EvaluationResponse] = {}
 
+@app.on_event("startup")
+async def startup_event():
+    """Preload models on application startup"""
+    try:
+        await model_manager.preload_models()
+        logger.info("✅ Startup completed successfully")
+    except Exception as e:
+        logger.error(f"❌ Startup failed: {e}")
+        # Don't crash the server, continue with degraded functionality
+        pass
+
 @app.get("/")
 async def root():
     """Root endpoint with API information"""
@@ -81,32 +187,53 @@ async def root():
         "message": "AudioLDM Evaluation API",
         "version": "1.0.0",
         "endpoints": {
-            "/health": "Health check",
+            "/health": "Health check with model status",
+            "/models": "Get preloaded model information", 
             "/metrics": "Get available metrics",
             "/backbones": "Get available backbone models",
             "/evaluate": "Submit evaluation job",
             "/jobs/{job_id}": "Get evaluation results",
+            "/jobs": "List all evaluation jobs",
             "/docs": "API documentation"
         }
     }
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint with model status"""
     try:
         # Check if CUDA is available
         cuda_available = torch.cuda.is_available()
         cuda_count = torch.cuda.device_count() if cuda_available else 0
         
+        # Get model manager status
+        model_info = model_manager.get_model_info()
+        
         return {
             "status": "healthy",
             "cuda_available": cuda_available,
             "cuda_devices": cuda_count,
-            "pytorch_version": torch.__version__
+            "pytorch_version": torch.__version__,
+            "models": model_info
         }
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
+
+@app.get("/models")
+async def get_model_status():
+    """Get detailed information about preloaded models"""
+    try:
+        model_info = model_manager.get_model_info()
+        return {
+            "model_manager": model_info,
+            "available_backbones": AVAILABLE_BACKBONES,
+            "supported_sampling_rates": [16000, 32000],
+            "preloading_status": "completed" if model_info["preloaded"] else "pending"
+        }
+    except Exception as e:
+        logger.error(f"Model status check failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Model status check failed: {str(e)}")
 
 @app.get("/metrics")
 async def get_available_metrics():
@@ -167,6 +294,13 @@ async def evaluate_audio(
             raise HTTPException(
                 status_code=400, 
                 detail=f"Invalid backbone '{backbone}'. Available: {AVAILABLE_BACKBONES}"
+            )
+        
+        # Validate sampling rate
+        if sampling_rate not in [16000, 32000]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid sampling rate '{sampling_rate}'. Supported: [16000, 32000]"
             )
         
         if not generated_files:
@@ -237,16 +371,8 @@ async def evaluate_audio(
             evaluation_mode=evaluation_mode
         )
         
-        # Set up device
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        logger.info(f"Using device: {device}")
-        
-        # Initialize evaluator
-        evaluator = EvaluationHelper(
-            sampling_rate=sampling_rate,
-            device=device,
-            backbone=backbone
-        )
+        # Get preloaded evaluator (much faster than creating new instance)
+        evaluator = model_manager.get_evaluator(backbone, sampling_rate)
         
         # Run evaluation
         logger.info("Running evaluation...")

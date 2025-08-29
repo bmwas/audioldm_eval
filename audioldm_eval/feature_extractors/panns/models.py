@@ -233,18 +233,36 @@ class Cnn14(nn.Module):
         self.fc1 = nn.Linear(2048, 2048, bias=True)
         self.fc_audioset = nn.Linear(2048, classes_num, bias=True)
         home_dir = os.path.expanduser("~")
-        if not os.path.exists("%s/.cache/audioldm_eval/ckpt/Cnn14_mAP=0.431.pth" % (home_dir)):
+        # Download models if they don't exist
+        ckpt_32k_path = "%s/.cache/audioldm_eval/ckpt/Cnn14_mAP=0.431.pth" % (home_dir)
+        ckpt_16k_path = "%s/.cache/audioldm_eval/ckpt/Cnn14_16k_mAP=0.438.pth" % (home_dir)
+        
+        if not os.path.exists(ckpt_32k_path) or not os.path.exists(ckpt_16k_path):
             print("Download pretrained checkpoints of Cnn14.")
             os.makedirs("%s/.cache/audioldm_eval/ckpt" % (home_dir), exist_ok=True)
-            os.system("wget -P %s/.cache/audioldm_eval/ckpt/ %s" % (home_dir,"https://zenodo.org/record/3576403/files/Cnn14_mAP%3D0.431.pth"))
-            os.system("wget -P %s/.cache/audioldm_eval/ckpt/ %s" % (home_dir,"https://zenodo.org/record/3987831/files/Cnn14_16k_mAP%3D0.438.pth"))
+            
+            if not os.path.exists(ckpt_32k_path):
+                print("Downloading Cnn14_mAP=0.431.pth...")
+                result = os.system("wget -P %s/.cache/audioldm_eval/ckpt/ %s" % (home_dir,"https://zenodo.org/record/3576403/files/Cnn14_mAP%3D0.431.pth"))
+                if result != 0:
+                    raise RuntimeError(f"Failed to download Cnn14_mAP=0.431.pth (wget exit code: {result})")
+                if not os.path.exists(ckpt_32k_path) or os.path.getsize(ckpt_32k_path) < 100000:  # Should be much larger than 100KB
+                    raise RuntimeError(f"Downloaded file {ckpt_32k_path} is missing or too small")
+            
+            if not os.path.exists(ckpt_16k_path):
+                print("Downloading Cnn14_16k_mAP=0.438.pth...")
+                result = os.system("wget -P %s/.cache/audioldm_eval/ckpt/ %s" % (home_dir,"https://zenodo.org/record/3987831/files/Cnn14_16k_mAP%3D0.438.pth"))
+                if result != 0:
+                    raise RuntimeError(f"Failed to download Cnn14_16k_mAP=0.438.pth (wget exit code: {result})")
+                if not os.path.exists(ckpt_16k_path) or os.path.getsize(ckpt_16k_path) < 100000:  # Should be much larger than 100KB
+                    raise RuntimeError(f"Downloaded file {ckpt_16k_path} is missing or too small")
 
         # self.init_weight()
         if sample_rate == 16000:
-            state_dict = torch.load("%s/.cache/audioldm_eval/ckpt/Cnn14_16k_mAP=0.438.pth" % home_dir)
+            state_dict = torch.load("%s/.cache/audioldm_eval/ckpt/Cnn14_16k_mAP=0.438.pth" % home_dir, weights_only=False)
             self.load_state_dict(state_dict["model"])
         elif sample_rate == 32000:
-            state_dict = torch.load("%s/.cache/audioldm_eval/ckpt/Cnn14_mAP=0.431.pth" % home_dir)
+            state_dict = torch.load("%s/.cache/audioldm_eval/ckpt/Cnn14_mAP=0.431.pth" % home_dir, weights_only=False)
             self.load_state_dict(state_dict["model"])
 
     def init_weight(self):
@@ -3165,18 +3183,36 @@ class Cnn14_16k(nn.Module):
 
         # self.init_weight()
         home_dir = os.path.expanduser("~")
-        if not os.path.exist("%s/.cache/audioldm_eval/ckpt/Cnn14_mAP=0.431.pth" % home_dir):
+        # Download models if they don't exist
+        ckpt_32k_path = "%s/.cache/audioldm_eval/ckpt/Cnn14_mAP=0.431.pth" % (home_dir)
+        ckpt_16k_path = "%s/.cache/audioldm_eval/ckpt/Cnn14_16k_mAP=0.438.pth" % (home_dir)
+        
+        if not os.path.exists(ckpt_32k_path) or not os.path.exists(ckpt_16k_path):
             print("Download pretrained checkpoints of Cnn14.")
-            os.makedirs("ckpt", exist_ok=True)
-            os.system("wget -P %s/.cache/audioldm_eval/ckpt/ %s" % (home_dir,"https://zenodo.org/record/3576403/files/Cnn14_mAP%3D0.431.pth"))
-            os.system("wget -P %s/.cache/audioldm_eval/ckpt/ %s" % (home_dir,"https://zenodo.org/record/3987831/files/Cnn14_16k_mAP%3D0.438.pth"))
+            os.makedirs("%s/.cache/audioldm_eval/ckpt" % (home_dir), exist_ok=True)
+            
+            if not os.path.exists(ckpt_32k_path):
+                print("Downloading Cnn14_mAP=0.431.pth...")
+                result = os.system("wget -P %s/.cache/audioldm_eval/ckpt/ %s" % (home_dir,"https://zenodo.org/record/3576403/files/Cnn14_mAP%3D0.431.pth"))
+                if result != 0:
+                    raise RuntimeError(f"Failed to download Cnn14_mAP=0.431.pth (wget exit code: {result})")
+                if not os.path.exists(ckpt_32k_path) or os.path.getsize(ckpt_32k_path) < 100000:  # Should be much larger than 100KB
+                    raise RuntimeError(f"Downloaded file {ckpt_32k_path} is missing or too small")
+            
+            if not os.path.exists(ckpt_16k_path):
+                print("Downloading Cnn14_16k_mAP=0.438.pth...")
+                result = os.system("wget -P %s/.cache/audioldm_eval/ckpt/ %s" % (home_dir,"https://zenodo.org/record/3987831/files/Cnn14_16k_mAP%3D0.438.pth"))
+                if result != 0:
+                    raise RuntimeError(f"Failed to download Cnn14_16k_mAP=0.438.pth (wget exit code: {result})")
+                if not os.path.exists(ckpt_16k_path) or os.path.getsize(ckpt_16k_path) < 100000:  # Should be much larger than 100KB
+                    raise RuntimeError(f"Downloaded file {ckpt_16k_path} is missing or too small")
 
         # self.init_weight()
         if sample_rate == 16000:
-            state_dict = torch.load("%s/.cache/audioldm_eval/ckpt/Cnn14_16k_mAP=0.438.pth" % home_dir)
+            state_dict = torch.load("%s/.cache/audioldm_eval/ckpt/Cnn14_16k_mAP=0.438.pth" % home_dir, weights_only=False)
             self.load_state_dict(state_dict["model"])
         elif sample_rate == 32000:
-            state_dict = torch.load("%s/.cache/audioldm_eval/ckpt/Cnn14_mAP=0.431.pth" % home_dir)
+            state_dict = torch.load("%s/.cache/audioldm_eval/ckpt/Cnn14_mAP=0.431.pth" % home_dir, weights_only=False)
             self.load_state_dict(state_dict["model"])
 
     def init_weight(self):

@@ -67,7 +67,7 @@ class FeatureExtractorInceptionV3(TorchVisionInception3):
             with redirect_stdout(sys.stderr):
                 state_dict = load_state_dict_from_url(PT_INCEPTION_URL, progress=True)
         else:
-            state_dict = torch.load(feature_extractor_weights_path)
+            state_dict = torch.load(feature_extractor_weights_path, weights_only=False)
         self.load_state_dict(state_dict)
 
         for p in self.parameters():

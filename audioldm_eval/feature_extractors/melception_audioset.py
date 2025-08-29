@@ -27,7 +27,7 @@ class Melception(Inception3):
         self.maxpool1 = torch.nn.Identity()
         self.maxpool2 = torch.nn.Identity()
 
-        state_dict = torch.load(feature_extractor_weights_path, map_location="cpu")
+        state_dict = torch.load(feature_extractor_weights_path, map_location="cpu", weights_only=False)
         new_state_dict = load_module2model(state_dict["model"])
         # print('before....')
         # print(self.state_dict()['Conv2d_1a_3x3.conv.weight'])

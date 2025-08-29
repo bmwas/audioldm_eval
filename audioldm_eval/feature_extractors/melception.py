@@ -17,7 +17,7 @@ class Melception(Inception3):
         self.maxpool1 = torch.nn.Identity()
         self.maxpool2 = torch.nn.Identity()
 
-        state_dict = torch.load(feature_extractor_weights_path, map_location="cpu")
+        state_dict = torch.load(feature_extractor_weights_path, map_location="cpu", weights_only=False)
         self.load_state_dict(state_dict["model"])
         for p in self.parameters():
             p.requires_grad_(False)
