@@ -47,6 +47,8 @@ RUN python3.10 -m venv venv && \
     pip install -e . --no-deps && \
     # Install remaining dependencies
     pip install torch torchaudio transformers scikit-image torchlibrosa absl-py scipy tqdm librosa && \
+    # Install audio processing dependencies
+    pip install resampy && \
     # Install API dependencies
     pip install fastapi uvicorn python-multipart aiofiles
 

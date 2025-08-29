@@ -27,7 +27,7 @@ cd audioldm_eval
 pip install -e . --no-deps
 
 # Install remaining dependencies
-pip install torch torchaudio transformers scikit-image torchlibrosa absl-py scipy tqdm librosa
+pip install torch torchaudio transformers scikit-image torchlibrosa absl-py scipy tqdm librosa resampy
 ```
 
 ### Known Installation Issues
