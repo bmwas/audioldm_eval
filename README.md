@@ -226,35 +226,652 @@ Once the container is running, the API will be available at `http://localhost:26
 - **GET** `/jobs` - List all evaluation jobs
 - **GET** `/docs` - Interactive API documentation (Swagger UI)
 
-#### Example API Usage
+## 📡 Comprehensive API Usage Guide
 
-**1. Check API Health:**
+### 🌐 Base URL Configuration
+```bash
+# Local development
+BASE_URL="http://localhost:2600"
+
+# Remote server (replace with your server IP)
+BASE_URL="http://your-server-ip:2600"
+```
+
+### 📋 Detailed API Calls
+
+#### **1. Health Check**
 ```bash
 curl http://localhost:2600/health
 ```
 
-**2. Get Available Metrics:**
+**Expected Response:**
+```json
+{
+  "status": "healthy",
+  "cuda_available": true,
+  "cuda_devices": 1,
+  "pytorch_version": "2.8.0+cu128",
+  "models": {
+    "preloaded": true,
+    "device": "cuda:0",
+    "loaded_models": ["cnn14_16000", "cnn14_32000", "mert_16000", "mert_32000"],
+    "model_count": 4,
+    "memory_usage": {
+      "cpu_percent": 15.2,
+      "memory_mb": 2048.5,
+      "memory_percent": 25.1
+    }
+  }
+}
+```
+
+#### **2. Get Available Metrics**
 ```bash
 curl http://localhost:2600/metrics
 ```
 
-**3. Submit Evaluation Job:**
+**Expected Response:**
+```json
+{
+  "available_metrics": ["FAD", "ISc", "FD", "KID", "KL", "KL_Sigmoid", "PSNR", "SSIM", "LSD"],
+  "recommended": ["FAD", "ISc"],
+  "paired_only": ["KL", "KL_Sigmoid", "PSNR", "SSIM", "LSD"],
+  "descriptions": {
+    "FAD": "Frechet Audio Distance - Recommended for overall quality",
+    "ISc": "Inception Score - Recommended for diversity evaluation",
+    "FD": "Frechet Distance using PANNs or MERT",
+    "KID": "Kernel Inception Distance",
+    "KL": "KL Divergence (softmax over logits) - Paired mode only",
+    "KL_Sigmoid": "KL Divergence (sigmoid over logits) - Paired mode only",
+    "PSNR": "Peak Signal-to-Noise Ratio - Paired mode only",
+    "SSIM": "Structural Similarity Index - Paired mode only",
+    "LSD": "Log-Spectral Distance - Paired mode only"
+  }
+}
+```
+
+#### **3. Get Available Backbones**
 ```bash
-# Upload audio files for evaluation
+curl http://localhost:2600/backbones
+```
+
+**Expected Response:**
+```json
+{
+  "available_backbones": ["cnn14", "mert"],
+  "descriptions": {
+    "cnn14": "PANNs CNN14 model - Recommended for general audio",
+    "mert": "MERT model - Better for music understanding"
+  }
+}
+```
+
+#### **4. Get Model Status**
+```bash
+curl http://localhost:2600/models
+```
+
+**Expected Response:**
+```json
+{
+  "model_manager": {
+    "preloaded": true,
+    "device": "cuda:0",
+    "loaded_models": ["cnn14_16000", "cnn14_32000", "mert_16000", "mert_32000"],
+    "model_count": 4,
+    "memory_usage": {
+      "cpu_percent": 15.2,
+      "memory_mb": 2048.5
+    }
+  },
+  "available_backbones": ["cnn14", "mert"],
+  "supported_sampling_rates": [16000, 32000],
+  "preloading_status": "completed"
+}
+```
+
+### 🎯 Main Evaluation Endpoint
+
+#### **Basic Evaluation (All Defaults)**
+```bash
 curl -X POST "http://localhost:2600/evaluate" \
-  -F "generated_files=@path/to/generated1.wav" \
-  -F "generated_files=@path/to/generated2.wav" \
-  -F "reference_files=@path/to/reference1.wav" \
-  -F "reference_files=@path/to/reference2.wav" \
+  -F "generated_files=@generated1.wav" \
+  -F "generated_files=@generated2.wav" \
+  -F "reference_files=@reference1.wav" \
+  -F "reference_files=@reference2.wav"
+```
+
+#### **Advanced Evaluation with All Parameters**
+```bash
+curl -X POST "http://localhost:2600/evaluate" \
+  -F "generated_files=@generated1.wav" \
+  -F "generated_files=@generated2.wav" \
+  -F "generated_files=@generated3.wav" \
+  -F "reference_files=@reference1.wav" \
+  -F "reference_files=@reference2.wav" \
+  -F "reference_files=@reference3.wav" \
   -F "backbone=cnn14" \
   -F "sampling_rate=16000" \
+  -F "metrics=FAD,ISc,FD,KID" \
+  -F "limit_num=10"
+```
+
+### 📊 Evaluation Parameters Explained
+
+#### **Required Parameters:**
+- **`generated_files`** (List[UploadFile]): Generated audio files to evaluate
+  - Supports multiple files in single request
+  - Common formats: WAV, MP3, FLAC, M4A
+  - No size limit (but larger files take longer to process)
+
+- **`reference_files`** (List[UploadFile]): Reference/ground truth audio files
+  - Should match the content type of generated files
+  - Used for comparison and metric calculation
+
+#### **Optional Parameters:**
+- **`backbone`** (str, default="cnn14"): Model backbone to use
+  - `"cnn14"`: PANNs CNN14 model (recommended for general audio)
+  - `"mert"`: MERT model (better for music understanding)
+
+- **`sampling_rate`** (int, default=16000): Audio sampling rate
+  - `16000`: Standard for speech audio
+  - `32000`: Higher quality, better for music
+  - Audio is automatically resampled to match model requirements
+
+- **`metrics`** (str, optional): Comma-separated list of metrics to calculate
+  - If not specified, all available metrics are calculated
+  - Example: `"FAD,ISc,FD"` or `"FAD,ISc,KL,PSNR"`
+  - See metric descriptions below for details
+
+- **`limit_num`** (int, optional): Limit number of file pairs to evaluate
+  - Useful for testing with large datasets
+  - If not specified, all uploaded files are processed
+
+### 🎵 Evaluation Modes
+
+The API automatically detects evaluation mode based on uploaded files:
+
+#### **Paired Mode** (Same filenames and count)
+```bash
+# Files with matching names
+generated1.wav ↔ reference1.wav
+generated2.wav ↔ reference2.wav
+generated3.wav ↔ reference3.wav
+```
+- **Available Metrics**: All metrics (FAD, ISc, FD, KID, KL, KL_Sigmoid, PSNR, SSIM, LSD)
+- **Use Case**: Direct comparison between generated and reference audio
+
+#### **Unpaired Mode** (Different filenames or counts)
+```bash
+# Different filenames or counts
+generated_audio_1.wav, generated_audio_2.wav
+reference_sound_1.wav, reference_sound_2.wav, reference_sound_3.wav
+```
+- **Available Metrics**: FAD, ISc, FD, KID only
+- **Use Case**: Comparing overall quality/diversity of audio sets
+
+### 📈 Metric Descriptions & Interpretation
+
+#### **Recommended Metrics (Use These First)**
+
+**FAD (Frechet Audio Distance)**
+- **Range**: 0 to ∞ (lower is better)
+- **Interpretation**: 
+  - < 1.0: Excellent quality
+  - 1.0-3.0: Good quality
+  - 3.0-10.0: Moderate quality
+  - > 10.0: Poor quality
+- **Use Case**: Overall audio quality assessment
+
+**ISc (Inception Score)**
+- **Range**: 1.0 to ∞ (higher is better)
+- **Interpretation**:
+  - 1.0-2.0: Low diversity
+  - 2.0-5.0: Moderate diversity
+  - 5.0-10.0: Good diversity
+  - > 10.0: High diversity
+- **Use Case**: Audio diversity and variety assessment
+
+#### **Additional Quality Metrics**
+
+**FD (Frechet Distance)**
+- **Range**: 0 to ∞ (lower is better)
+- **Interpretation**: Similar to FAD but using different feature extractor
+- **Use Case**: Alternative quality metric for comparison
+
+**KID (Kernel Inception Distance)**
+- **Range**: 0 to ∞ (lower is better)
+- **Interpretation**: Unbiased alternative to FAD
+- **Use Case**: More stable metric for small datasets
+
+#### **Paired-Only Metrics** (Require matching filenames)
+
+**KL (Kullback-Leibler Divergence)**
+- **Range**: 0 to ∞ (lower is better)
+- **Interpretation**: 
+  - < 0.1: Very similar distributions
+  - 0.1-1.0: Similar distributions
+  - > 1.0: Different distributions
+- **Use Case**: Statistical similarity between audio features
+
+**PSNR (Peak Signal-to-Noise Ratio)**
+- **Range**: 0 to ∞ dB (higher is better)
+- **Interpretation**:
+  - > 40 dB: Excellent quality
+  - 30-40 dB: Good quality
+  - 20-30 dB: Acceptable quality
+  - < 20 dB: Poor quality
+- **Use Case**: Signal fidelity measurement
+
+**SSIM (Structural Similarity Index)**
+- **Range**: -1 to 1 (higher is better)
+- **Interpretation**:
+  - > 0.9: Excellent similarity
+  - 0.7-0.9: Good similarity
+  - 0.5-0.7: Moderate similarity
+  - < 0.5: Poor similarity
+- **Use Case**: Perceptual similarity measurement
+
+**LSD (Log-Spectral Distance)**
+- **Range**: 0 to ∞ (lower is better)
+- **Interpretation**:
+  - < 1.0: Very similar spectral content
+  - 1.0-3.0: Similar spectral content
+  - > 3.0: Different spectral content
+- **Use Case**: Spectral similarity measurement
+
+### 📤 Expected Response Format
+
+#### **Successful Evaluation Response:**
+```json
+{
+  "job_id": "abc123-def456-ghi789",
+  "status": "completed",
+  "metrics": {
+    "frechet_audio_distance": 4.62015,
+    "frechet_distance": 15.50206,
+    "kullback_leibler_divergence_sigmoid": 0.00214,
+    "kullback_leibler_divergence_softmax": 0.25198,
+    "inception_score_mean": 1.01896,
+    "inception_score_std": 0.005161,
+    "kernel_inception_distance": 0.12345,
+    "peak_signal_to_noise_ratio": 28.456,
+    "structural_similarity_index": 0.789,
+    "log_spectral_distance": 2.134
+  },
+  "evaluation_mode": "paired"
+}
+```
+
+#### **Error Response:**
+```json
+{
+  "job_id": "abc123-def456-ghi789",
+  "status": "failed",
+  "error": "Invalid backbone 'invalid_model'. Available: ['cnn14', 'mert']"
+}
+```
+
+### 🔍 Job Status Checking
+
+#### **Get Specific Job Results:**
+```bash
+curl http://localhost:2600/jobs/abc123-def456-ghi789
+```
+
+#### **List All Jobs:**
+```bash
+curl http://localhost:2600/jobs
+```
+
+**Expected Response:**
+```json
+{
+  "jobs": [
+    {
+      "job_id": "abc123-def456-ghi789",
+      "status": "completed",
+      "evaluation_mode": "paired",
+      "backbone": "cnn14",
+      "metrics_count": 9
+    },
+    {
+      "job_id": "def456-ghi789-jkl012",
+      "status": "running",
+      "evaluation_mode": "unpaired"
+    }
+  ]
+}
+```
+
+## 🐍 Programming Language Examples
+
+### Python with Requests
+```python
+import requests
+import json
+import time
+
+# API configuration
+BASE_URL = "http://localhost:2600"
+
+def check_api_health():
+    """Check if API is running and healthy"""
+    response = requests.get(f"{BASE_URL}/health")
+    if response.status_code == 200:
+        health = response.json()
+        print(f"✅ API Status: {health['status']}")
+        print(f"🔧 CUDA Available: {health['cuda_available']}")
+        print(f"📦 Models Preloaded: {health['models']['preloaded']}")
+        return True
+    else:
+        print(f"❌ API Health Check Failed: {response.status_code}")
+        return False
+
+def submit_evaluation(generated_files, reference_files, **kwargs):
+    """Submit audio files for evaluation"""
+    
+    # Prepare files
+    files = {}
+    for i, file_path in enumerate(generated_files):
+        files[f'generated_files'] = files.get('generated_files', []) + [open(file_path, 'rb')]
+    for i, file_path in enumerate(reference_files):
+        files[f'reference_files'] = files.get('reference_files', []) + [open(file_path, 'rb')]
+    
+    # Prepare data
+    data = {
+        'backbone': kwargs.get('backbone', 'cnn14'),
+        'sampling_rate': kwargs.get('sampling_rate', 16000),
+        'metrics': kwargs.get('metrics', None),
+        'limit_num': kwargs.get('limit_num', None)
+    }
+    
+    # Submit evaluation
+    response = requests.post(f"{BASE_URL}/evaluate", files=files, data=data)
+    
+    # Close file handles
+    for file_list in files.values():
+        for file_handle in file_list:
+            file_handle.close()
+    
+    if response.status_code == 200:
+        result = response.json()
+        print(f"✅ Evaluation submitted successfully!")
+        print(f"🆔 Job ID: {result['job_id']}")
+        print(f"📊 Status: {result['status']}")
+        return result
+    else:
+        print(f"❌ Evaluation failed: {response.status_code}")
+        print(f"Error: {response.text}")
+        return None
+
+def get_evaluation_results(job_id):
+    """Get evaluation results by job ID"""
+    response = requests.get(f"{BASE_URL}/jobs/{job_id}")
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"❌ Failed to get results: {response.status_code}")
+        return None
+
+# Example usage
+if __name__ == "__main__":
+    # Check API health
+    if not check_api_health():
+        exit(1)
+    
+    # Submit evaluation
+    generated_files = ["generated1.wav", "generated2.wav"]
+    reference_files = ["reference1.wav", "reference2.wav"]
+    
+    result = submit_evaluation(
+        generated_files, 
+        reference_files,
+        backbone="cnn14",
+        sampling_rate=16000,
+        metrics="FAD,ISc,FD"
+    )
+    
+    if result:
+        job_id = result['job_id']
+        
+        # Wait for completion and get results
+        while True:
+            results = get_evaluation_results(job_id)
+            if results and results['status'] == 'completed':
+                print("🎉 Evaluation completed!")
+                print(f"📊 Metrics: {json.dumps(results['metrics'], indent=2)}")
+                break
+            elif results and results['status'] == 'failed':
+                print(f"❌ Evaluation failed: {results.get('error', 'Unknown error')}")
+                break
+            else:
+                print("⏳ Evaluation in progress...")
+                time.sleep(5)
+```
+
+### Python with HTTPX (Async)
+```python
+import httpx
+import asyncio
+import json
+
+async def evaluate_audio_async(generated_files, reference_files, **kwargs):
+    """Async evaluation using HTTPX"""
+    
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        # Prepare files
+        files = []
+        for file_path in generated_files:
+            files.append(('generated_files', open(file_path, 'rb')))
+        for file_path in reference_files:
+            files.append(('reference_files', open(file_path, 'rb')))
+        
+        # Prepare data
+        data = {
+            'backbone': kwargs.get('backbone', 'cnn14'),
+            'sampling_rate': kwargs.get('sampling_rate', 16000),
+            'metrics': kwargs.get('metrics', None)
+        }
+        
+        try:
+            # Submit evaluation
+            response = await client.post(
+                "http://localhost:2600/evaluate",
+                files=files,
+                data=data
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                print(f"✅ Evaluation completed: {result['job_id']}")
+                return result
+            else:
+                print(f"❌ Evaluation failed: {response.status_code}")
+                return None
+                
+        finally:
+            # Close file handles
+            for _, file_handle in files:
+                file_handle.close()
+
+# Example usage
+async def main():
+    generated_files = ["generated1.wav", "generated2.wav"]
+    reference_files = ["reference1.wav", "reference2.wav"]
+    
+    result = await evaluate_audio_async(
+        generated_files,
+        reference_files,
+        backbone="cnn14",
+        metrics="FAD,ISc"
+    )
+    
+    if result:
+        print(f"📊 Results: {json.dumps(result['metrics'], indent=2)}")
+
+# Run async function
+asyncio.run(main())
+```
+
+### JavaScript/Node.js
+```javascript
+const FormData = require('form-data');
+const fs = require('fs');
+const fetch = require('node-fetch');
+
+class AudioLDMClient {
+    constructor(baseUrl = 'http://localhost:2600') {
+        this.baseUrl = baseUrl;
+    }
+    
+    async checkHealth() {
+        const response = await fetch(`${this.baseUrl}/health`);
+        const health = await response.json();
+        console.log(`✅ API Status: ${health.status}`);
+        console.log(`🔧 CUDA Available: ${health.cuda_available}`);
+        return health;
+    }
+    
+    async submitEvaluation(generatedFiles, referenceFiles, options = {}) {
+        const form = new FormData();
+        
+        // Add generated files
+        generatedFiles.forEach(filePath => {
+            form.append('generated_files', fs.createReadStream(filePath));
+        });
+        
+        // Add reference files
+        referenceFiles.forEach(filePath => {
+            form.append('reference_files', fs.createReadStream(filePath));
+        });
+        
+        // Add options
+        if (options.backbone) form.append('backbone', options.backbone);
+        if (options.samplingRate) form.append('sampling_rate', options.samplingRate);
+        if (options.metrics) form.append('metrics', options.metrics);
+        if (options.limitNum) form.append('limit_num', options.limitNum);
+        
+        const response = await fetch(`${this.baseUrl}/evaluate`, {
+            method: 'POST',
+            body: form
+        });
+        
+        if (response.ok) {
+            const result = await response.json();
+            console.log(`✅ Evaluation submitted: ${result.job_id}`);
+            return result;
+        } else {
+            console.error(`❌ Evaluation failed: ${response.status}`);
+            return null;
+        }
+    }
+    
+    async getResults(jobId) {
+        const response = await fetch(`${this.baseUrl}/jobs/${jobId}`);
+        if (response.ok) {
+            return await response.json();
+        } else {
+            console.error(`❌ Failed to get results: ${response.status}`);
+            return null;
+        }
+    }
+    
+    async waitForCompletion(jobId, maxWaitTime = 300000) {
+        const startTime = Date.now();
+        
+        while (Date.now() - startTime < maxWaitTime) {
+            const results = await this.getResults(jobId);
+            
+            if (results.status === 'completed') {
+                console.log('🎉 Evaluation completed!');
+                return results;
+            } else if (results.status === 'failed') {
+                console.error(`❌ Evaluation failed: ${results.error}`);
+                return null;
+            } else {
+                console.log('⏳ Evaluation in progress...');
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+        }
+        
+        console.error('⏰ Evaluation timeout');
+        return null;
+    }
+}
+
+// Example usage
+async function main() {
+    const client = new AudioLDMClient();
+    
+    // Check health
+    await client.checkHealth();
+    
+    // Submit evaluation
+    const result = await client.submitEvaluation(
+        ['generated1.wav', 'generated2.wav'],
+        ['reference1.wav', 'reference2.wav'],
+        {
+            backbone: 'cnn14',
+            samplingRate: 16000,
+            metrics: 'FAD,ISc,FD'
+        }
+    );
+    
+    if (result) {
+        // Wait for completion
+        const finalResults = await client.waitForCompletion(result.job_id);
+        if (finalResults) {
+            console.log('📊 Metrics:', JSON.stringify(finalResults.metrics, null, 2));
+        }
+    }
+}
+
+main().catch(console.error);
+```
+
+### cURL Examples for Different Scenarios
+
+#### **Quick Quality Check (Recommended Metrics Only)**
+```bash
+curl -X POST "http://localhost:2600/evaluate" \
+  -F "generated_files=@my_generated_audio.wav" \
+  -F "reference_files=@my_reference_audio.wav" \
+  -F "metrics=FAD,ISc"
+```
+
+#### **Music Evaluation with MERT Backbone**
+```bash
+curl -X POST "http://localhost:2600/evaluate" \
+  -F "generated_files=@music_gen1.wav" \
+  -F "generated_files=@music_gen2.wav" \
+  -F "reference_files=@music_ref1.wav" \
+  -F "reference_files=@music_ref2.wav" \
+  -F "backbone=mert" \
+  -F "sampling_rate=32000" \
   -F "metrics=FAD,ISc,FD"
 ```
 
-**4. Check Job Status:**
+#### **High-Quality Speech Evaluation**
 ```bash
-# Replace JOB_ID with the actual job ID returned from evaluation
-curl http://localhost:2600/jobs/JOB_ID
+curl -X POST "http://localhost:2600/evaluate" \
+  -F "generated_files=@speech_gen1.wav" \
+  -F "generated_files=@speech_gen2.wav" \
+  -F "reference_files=@speech_ref1.wav" \
+  -F "reference_files=@speech_ref2.wav" \
+  -F "backbone=cnn14" \
+  -F "sampling_rate=16000" \
+  -F "metrics=FAD,ISc,KL,PSNR,SSIM"
+```
+
+#### **Batch Processing with File Limit**
+```bash
+curl -X POST "http://localhost:2600/evaluate" \
+  -F "generated_files=@batch_gen_*.wav" \
+  -F "reference_files=@batch_ref_*.wav" \
+  -F "backbone=cnn14" \
+  -F "limit_num=50" \
+  -F "metrics=FAD,ISc"
 ```
 
 ### Testing the API
@@ -274,6 +891,221 @@ python test_api.py
 # Test with custom parameters
 python test_api.py --api-url http://localhost:2600 --num-files 5
 ```
+
+## 🔧 API Troubleshooting & Common Issues
+
+### 🚨 Common Error Messages & Solutions
+
+#### **1. Connection Errors**
+```bash
+# Error: Connection refused
+curl: (7) Failed to connect to localhost port 2600: Connection refused
+```
+**Solutions:**
+- Check if the API server is running: `docker ps` or `ps aux | grep uvicorn`
+- Verify the correct port: `curl http://localhost:2600/health`
+- Check firewall settings if using remote server
+- Ensure Docker container is running: `docker run --gpus all -p 2600:2600 ghcr.io/bmwas/audiollmtest:latest`
+
+#### **2. Model Loading Errors**
+```json
+{
+  "status": "failed",
+  "error": "Failed to load model cnn14_16000: CUDA out of memory"
+}
+```
+**Solutions:**
+- Reduce batch size or use CPU: Set `CUDA_VISIBLE_DEVICES=""` to force CPU mode
+- Free GPU memory: `nvidia-smi` to check memory usage
+- Use smaller audio files or reduce `limit_num` parameter
+- Restart the container to clear GPU memory
+
+#### **3. File Upload Errors**
+```json
+{
+  "status": "failed", 
+  "error": "No generated files provided"
+}
+```
+**Solutions:**
+- Ensure files are properly attached: `-F "generated_files=@file.wav"`
+- Check file paths are correct and files exist
+- Verify file permissions: `ls -la file.wav`
+- Use absolute paths if relative paths fail
+
+#### **4. Invalid Parameter Errors**
+```json
+{
+  "status": "failed",
+  "error": "Invalid backbone 'invalid_model'. Available: ['cnn14', 'mert']"
+}
+```
+**Solutions:**
+- Use valid backbone values: `"cnn14"` or `"mert"`
+- Check sampling rate: Must be `16000` or `32000`
+- Verify metrics spelling: `"FAD,ISc,FD"` not `"fad,isc,fd"`
+- Use comma-separated values for metrics: `"FAD,ISc"` not `"FAD ISc"`
+
+#### **5. Evaluation Mode Errors**
+```json
+{
+  "status": "failed",
+  "error": "KL metric requires paired evaluation mode"
+}
+```
+**Solutions:**
+- Use paired mode: Ensure same number of files with matching names
+- Or use unpaired metrics only: `"FAD,ISc,FD,KID"`
+- Check file naming: `generated1.wav` ↔ `reference1.wav`
+
+### 🔍 Debugging Steps
+
+#### **Step 1: Check API Health**
+```bash
+curl http://localhost:2600/health
+```
+**Expected:** `{"status": "healthy", "cuda_available": true, ...}`
+
+#### **Step 2: Verify Model Status**
+```bash
+curl http://localhost:2600/models
+```
+**Expected:** `{"preloading_status": "completed", "model_count": 4}`
+
+#### **Step 3: Test Simple Evaluation**
+```bash
+# Create test files first
+python gen_test_file.py
+
+# Test with minimal parameters
+curl -X POST "http://localhost:2600/evaluate" \
+  -F "generated_files=@example/paired/generated_000.wav" \
+  -F "reference_files=@example/reference/reference_000.wav" \
+  -F "metrics=FAD"
+```
+
+#### **Step 4: Check Logs**
+```bash
+# Docker logs
+docker logs <container_id>
+
+# Or check log file
+tail -f /tmp/audioldm_api.log
+```
+
+### ⚡ Performance Optimization
+
+#### **Slow Evaluation Times**
+**Symptoms:** Evaluation takes >5 minutes for small files
+**Solutions:**
+- Use GPU: `docker run --gpus all ...`
+- Preload models: Check `/models` endpoint shows `"preloaded": true`
+- Reduce file size: Use shorter audio clips for testing
+- Use recommended metrics only: `"FAD,ISc"` instead of all metrics
+
+#### **High Memory Usage**
+**Symptoms:** Out of memory errors, system slowdown
+**Solutions:**
+- Limit concurrent requests: Process files in smaller batches
+- Use `limit_num` parameter to restrict evaluation size
+- Monitor memory: `curl http://localhost:2600/health` shows memory stats
+- Restart container periodically to clear memory
+
+#### **Network Timeouts**
+**Symptoms:** Connection timeouts during file upload
+**Solutions:**
+- Increase timeout: Use `--timeout 300` with curl
+- Compress audio files: Use smaller file formats
+- Upload in smaller batches: Process fewer files per request
+- Use local server: Avoid network latency for large files
+
+### 🐛 Advanced Debugging
+
+#### **Enable Verbose Logging**
+```bash
+# Set environment variable for detailed logs
+docker run --gpus all -p 2600:2600 \
+  -e PYTHONUNBUFFERED=1 \
+  -e LOG_LEVEL=DEBUG \
+  ghcr.io/bmwas/audiollmtest:latest
+```
+
+#### **Check System Resources**
+```bash
+# Monitor GPU usage
+watch -n 1 nvidia-smi
+
+# Monitor CPU and memory
+htop
+
+# Check disk space
+df -h
+```
+
+#### **Test Individual Components**
+```bash
+# Test model loading
+curl http://localhost:2600/models
+
+# Test file upload (without evaluation)
+curl -X POST "http://localhost:2600/evaluate" \
+  -F "generated_files=@test.wav" \
+  -F "reference_files=@test.wav" \
+  -F "limit_num=1" \
+  -F "metrics=FAD"
+```
+
+### 📊 Expected Behavior & Timing
+
+#### **Normal Startup Sequence**
+1. **Container Start**: 0-10 seconds
+2. **Model Preloading**: 60-120 seconds (first time), 40-80 seconds (cached)
+3. **API Ready**: Health check returns `"status": "healthy"`
+
+#### **Normal Evaluation Times**
+- **Small files** (< 10 seconds): 15-30 seconds
+- **Medium files** (10-60 seconds): 30-60 seconds  
+- **Large files** (> 60 seconds): 60-120 seconds
+- **Batch processing** (10+ files): 2-5 minutes
+
+#### **Expected Response Times**
+- **Health check**: < 1 second
+- **Model status**: < 1 second
+- **Job submission**: < 5 seconds
+- **Result retrieval**: < 1 second
+
+### 🆘 Getting Help
+
+#### **Check Logs First**
+```bash
+# Real-time log monitoring
+docker logs -f <container_id>
+
+# Or check persistent logs
+tail -f /tmp/audioldm_api.log
+```
+
+#### **Common Log Patterns**
+```
+# Successful startup
+INFO:app.models - 🎉 Model preloading completed!
+INFO:app.models - 📊 Summary: 4 successful, 0 failed
+
+# Evaluation in progress  
+INFO:app.api - 🚀 Starting evaluation computation for job abc123...
+
+# Error patterns
+ERROR:app.api - ❌ Evaluation failed for job abc123: CUDA out of memory
+WARNING:app.models - ⚠️ Model cnn14_16000 not preloaded, creating on-demand...
+```
+
+#### **Report Issues**
+When reporting issues, include:
+1. **Error message**: Full error response from API
+2. **Request details**: curl command or code used
+3. **System info**: `curl http://localhost:2600/health`
+4. **Logs**: Relevant log entries
+5. **File details**: Audio file format, size, duration
 
 ### API Features
 
