@@ -166,6 +166,94 @@ TypeError: EvaluationHelper.__init__() missing 1 required positional argument: '
 - `"cnn14"`: PANNs model (recommended)
 - `"mert"`: MERT model for music understanding
 
+## 📚 Model Sources & Citations
+
+### **CNN14 Models (`cnn14_16000`, `cnn14_32000`)**
+
+#### **Source & Download Locations:**
+- **16kHz Model**: `Cnn14_16k_mAP=0.438.pth`
+  - **Download URL**: `https://zenodo.org/record/3987831/files/Cnn14_16k_mAP%3D0.438.pth`
+  - **Zenodo Record**: [3987831](https://zenodo.org/record/3987831)
+- **32kHz Model**: `Cnn14_mAP=0.431.pth`
+  - **Download URL**: `https://zenodo.org/record/3576403/files/Cnn14_mAP%3D0.431.pth`
+  - **Zenodo Record**: [3576403](https://zenodo.org/record/3576403)
+
+#### **Paper Citation:**
+```bibtex
+@article{kong2020panns,
+  title={PANNs: Large-Scale Pretrained Audio Neural Networks for Audio Pattern Recognition},
+  author={Kong, Qiuqiang and Cao, Yuxuan and Iqbal, Turab and Wang, Yuxuan and Wang, Wenwu and Plumbley, Mark D},
+  journal={IEEE/ACM Transactions on Audio, Speech, and Language Processing},
+  volume={28},
+  pages={2880--2894},
+  year={2020},
+  publisher={IEEE}
+}
+```
+
+#### **Model Details:**
+- **Architecture**: CNN14 (14-layer Convolutional Neural Network)
+- **Training Data**: AudioSet (large-scale audio dataset)
+- **Classes**: 527 audio event classes
+- **Performance**: mAP=0.431 (32kHz), mAP=0.438 (16kHz)
+- **Framework**: PANNs (Pretrained Audio Neural Networks)
+
+### **MERT Models (`mert_16000`, `mert_32000`)**
+
+#### **Source & Download Location:**
+- **Hugging Face Model**: `m-a-p/MERT-v1-95M`
+- **Model Hub**: [https://huggingface.co/m-a-p/MERT-v1-95M](https://huggingface.co/m-a-p/MERT-v1-95M)
+- **Download Method**: Automatic via `transformers` library
+
+#### **Paper Citation:**
+```bibtex
+@article{li2023mert,
+  title={MERT: Acoustic Music Understanding Model with Large-Scale Self-supervised Training},
+  author={Li, Yizhi and Yuan, Ruibin and Zhang, Ge and Ma, Yinghao and Chen, Xingran and Yin, Hanzhi and Huang, Haotian and Ni, Chenghao and Weng, Wenhao and Liu, Xubo and others},
+  journal={arXiv preprint arXiv:2306.00107},
+  year={2023}
+}
+```
+
+#### **Model Details:**
+- **Architecture**: Transformer-based encoder (95M parameters)
+- **Training Data**: Large-scale music datasets
+- **Target Sample Rate**: 24kHz (automatically resampled from 16kHz/32kHz)
+- **Specialization**: Music understanding and representation learning
+- **Framework**: MERT (Music Encoder Representations from Transformers)
+
+### **Model Loading Process:**
+```python
+# CNN14 Models (from codebase)
+if sample_rate == 16000:
+    state_dict = torch.load("~/.cache/audioldm_eval/ckpt/Cnn14_16k_mAP=0.438.pth")
+elif sample_rate == 32000:
+    state_dict = torch.load("~/.cache/audioldm_eval/ckpt/Cnn14_mAP=0.431.pth")
+
+# MERT Model (from codebase)
+self.mel_model = AutoModel.from_pretrained("m-a-p/MERT-v1-95M", trust_remote_code=True)
+self.processor = Wav2Vec2FeatureExtractor.from_pretrained("m-a-p/MERT-v1-95M", trust_remote_code=True)
+```
+
+### **Model Configurations:**
+- **CNN14 16kHz**: window_size=512, hop_size=160, mel_bins=64, fmin=50, fmax=8000
+- **CNN14 32kHz**: window_size=1024, hop_size=320, mel_bins=64, fmin=50, fmax=14000
+- **MERT**: Automatically handles resampling to 24kHz regardless of input rate
+
+### **Usage Recommendations:**
+
+#### **When to Use CNN14:**
+- **General audio evaluation** (speech, environmental sounds, etc.)
+- **AudioSet-based tasks** (527 audio event classes)
+- **Standard audio classification** benchmarks
+
+#### **When to Use MERT:**
+- **Music-specific evaluation** (better music understanding)
+- **Musical content analysis** (harmony, melody, rhythm)
+- **Music generation quality assessment**
+
+The models are automatically downloaded and cached in `~/.cache/audioldm_eval/ckpt/` on first use, ensuring reproducible evaluation results across different systems.
+
 ## Docker API Usage
 
 ### Building the Docker Image
