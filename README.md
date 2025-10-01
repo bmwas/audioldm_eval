@@ -978,7 +978,17 @@ python test_api.py
 
 # Test with custom parameters
 python test_api.py --api-url http://localhost:2600 --num-files 5
+
+# Test with your own audio files
+python test_api.py --generated /home/benson/Downloads/prosody/predicted_audio_1.wav --reference /home/benson/Downloads/prosody/ref_audio_1.wav
 ```
+
+The `test_api.py` script provides a comprehensive testing interface with support for:
+- Custom audio file inputs via `--generated` and `--reference` parameters
+- Multiple backbone models (`cnn14`, `mert`)
+- Specific metric selection via `--metrics` parameter
+- Custom API URLs for remote testing
+- Automatic sample file generation for quick testing
 
 ## 🔧 API Troubleshooting & Common Issues
 
