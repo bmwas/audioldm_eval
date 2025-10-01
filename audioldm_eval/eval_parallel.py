@@ -1,4 +1,5 @@
 import os
+import logging
 import torch
 import datetime
 import numpy as np
@@ -14,6 +15,9 @@ from audioldm_eval import calculate_fid, calculate_isc, calculate_kid, calculate
 from audioldm_eval.feature_extractors.panns import Cnn14
 from audioldm_eval.audio.tools import save_pickle, load_pickle, write_json, load_json
 from tqdm import tqdm
+
+# Configure logging for parallel evaluation module
+parallel_eval_logger = logging.getLogger(__name__)
 
 class EvaluationHelperParallel:
     def __init__(self, sampling_rate, num_gpus, batch_size=1, backbone="mert") -> None:
@@ -241,8 +245,24 @@ class EvaluationHelperParallel:
         return out
     
     def file_init_check(self, dir):
-        assert os.path.exists(dir), "The path does not exist %s" % dir
-        assert len(os.listdir(dir)) > 1, "There is no files in %s" % dir
+        parallel_eval_logger.debug(f"🔍 [Parallel] Checking directory: {dir}")
+        
+        # Check if directory exists
+        if not os.path.exists(dir):
+            parallel_eval_logger.error(f"❌ [Parallel] Directory does not exist: {dir}")
+            raise AssertionError(f"The path does not exist {dir}")
+        parallel_eval_logger.debug(f"✅ [Parallel] Directory exists: {dir}")
+        
+        # List files in directory
+        files = os.listdir(dir)
+        parallel_eval_logger.debug(f"📁 [Parallel] Files in directory {dir}: {files}")
+        parallel_eval_logger.debug(f"📊 [Parallel] File count: {len(files)}")
+        
+        if len(files) == 0:
+            parallel_eval_logger.error(f"❌ [Parallel] No files found in directory: {dir}")
+            raise AssertionError(f"There is no files in {dir}")
+        
+        parallel_eval_logger.debug(f"✅ [Parallel] Directory check passed: {len(files)} files found")
 
     def get_filename_intersection_ratio(
         self, dir1, dir2, threshold=0.99, limit_num=None

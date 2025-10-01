@@ -1,4 +1,5 @@
 import os
+import logging
 from audioldm_eval.datasets.load_mel import load_npy_data, MelPairedDataset, WaveDataset
 import numpy as np
 import argparse
@@ -16,6 +17,9 @@ from audioldm_eval.feature_extractors.panns import Cnn14
 from audioldm_eval.audio.tools import save_pickle, load_pickle, write_json, load_json
 from ssr_eval.metrics import AudioMetrics
 import audioldm_eval.audio as Audio
+
+# Configure logging for evaluation module
+eval_logger = logging.getLogger(__name__)
 
 class EvaluationHelper:
     def __init__(self, sampling_rate, device, backbone="mert") -> None:
@@ -92,54 +96,104 @@ class EvaluationHelper:
         groundtruth_path,
         limit_num=None,
     ):
-        print("Generted files", generate_files_path)
-        print("Target files", groundtruth_path)
+        eval_logger.info(f"🚀 Starting evaluation with backbone: {self.backbone}, sampling_rate: {self.sampling_rate}")
+        eval_logger.info(f"📁 Generated files path: {generate_files_path}")
+        eval_logger.info(f"📁 Target files path: {groundtruth_path}")
+        eval_logger.info(f"🔢 Limit num: {limit_num}")
 
+        # File initialization checks with detailed logging
+        eval_logger.debug(f"🔍 Performing file initialization check for generated files...")
         self.file_init_check(generate_files_path)
+        eval_logger.debug(f"✅ Generated files directory check passed")
+        
+        eval_logger.debug(f"🔍 Performing file initialization check for target files...")
         self.file_init_check(groundtruth_path)
+        eval_logger.debug(f"✅ Target files directory check passed")
 
+        # Get filename intersection ratio with detailed logging
+        eval_logger.debug(f"🔍 Calculating filename intersection ratio...")
         same_name = self.get_filename_intersection_ratio(
             generate_files_path, groundtruth_path, limit_num=limit_num
         )
+        eval_logger.info(f"📊 Filename intersection analysis complete - same_name: {same_name}")
 
-        metrics = self.calculate_metrics(generate_files_path, groundtruth_path, same_name, limit_num) # recalculate = True
+        # Calculate metrics with detailed logging
+        eval_logger.debug(f"🔄 Starting metrics calculation...")
+        # Enable PSNR, SSIM, and LSD calculations for comprehensive evaluation
+        metrics = self.calculate_metrics(
+            generate_files_path, 
+            groundtruth_path, 
+            same_name, 
+            limit_num,
+            calculate_psnr_ssim=True,  # Enable PSNR and SSIM
+            calculate_lsd=True         # Enable LSD
+        )
+        eval_logger.info(f"✅ Metrics calculation completed successfully")
+        eval_logger.debug(f"📊 Calculated metrics: {list(metrics.keys()) if metrics else 'None'}")
 
         return metrics
 
     def file_init_check(self, dir):
-        assert os.path.exists(dir), "The path does not exist %s" % dir
-        assert len(os.listdir(dir)) > 1, "There is no files in %s" % dir
+        eval_logger.debug(f"🔍 Checking directory: {dir}")
+        
+        # Check if directory exists
+        if not os.path.exists(dir):
+            eval_logger.error(f"❌ Directory does not exist: {dir}")
+            raise AssertionError(f"The path does not exist {dir}")
+        eval_logger.debug(f"✅ Directory exists: {dir}")
+        
+        # List files in directory
+        files = os.listdir(dir)
+        eval_logger.debug(f"📁 Files in directory {dir}: {files}")
+        eval_logger.debug(f"📊 File count: {len(files)}")
+        
+        if len(files) == 0:
+            eval_logger.error(f"❌ No files found in directory: {dir}")
+            raise AssertionError(f"There is no files in {dir}")
+        
+        eval_logger.debug(f"✅ Directory check passed: {len(files)} files found")
 
     def get_filename_intersection_ratio(
         self, dir1, dir2, threshold=0.99, limit_num=None
     ):
+        eval_logger.debug(f"🔍 Analyzing filename intersection between {dir1} and {dir2}")
+        eval_logger.debug(f"📊 Threshold: {threshold}, Limit: {limit_num}")
+        
+        # Get file lists
         self.datalist1 = [os.path.join(dir1, x) for x in os.listdir(dir1)]
         self.datalist1 = sorted(self.datalist1)
+        eval_logger.debug(f"📁 Directory 1 files ({len(self.datalist1)}): {[os.path.basename(x) for x in self.datalist1]}")
 
         self.datalist2 = [os.path.join(dir2, x) for x in os.listdir(dir2)]
         self.datalist2 = sorted(self.datalist2)
+        eval_logger.debug(f"📁 Directory 2 files ({len(self.datalist2)}): {[os.path.basename(x) for x in self.datalist2]}")
 
+        # Create filename dictionaries
         data_dict1 = {os.path.basename(x): x for x in self.datalist1}
         data_dict2 = {os.path.basename(x): x for x in self.datalist2}
 
         keyset1 = set(data_dict1.keys())
         keyset2 = set(data_dict2.keys())
+        
+        eval_logger.debug(f"🔑 Filenames in dir1: {sorted(keyset1)}")
+        eval_logger.debug(f"🔑 Filenames in dir2: {sorted(keyset2)}")
 
+        # Calculate intersection
         intersect_keys = keyset1.intersection(keyset2)
-        if (
-            len(intersect_keys) / len(keyset1) > threshold
-            and len(intersect_keys) / len(keyset2) > threshold
-        ):
-            print(
-                "+Two path have %s intersection files out of total %s & %s files. Processing two folder with same_name=True"
-                % (len(intersect_keys), len(keyset1), len(keyset2))
-            )
+        eval_logger.debug(f"🔗 Intersecting filenames: {sorted(intersect_keys)}")
+        
+        # Calculate ratios
+        ratio1 = len(intersect_keys) / len(keyset1) if len(keyset1) > 0 else 0
+        ratio2 = len(intersect_keys) / len(keyset2) if len(keyset2) > 0 else 0
+        
+        eval_logger.debug(f"📊 Intersection ratios: {ratio1:.3f} (dir1), {ratio2:.3f} (dir2)")
+        eval_logger.debug(f"📊 Threshold check: {ratio1 > threshold} and {ratio2 > threshold}")
+        
+        if ratio1 > threshold and ratio2 > threshold:
+            eval_logger.info(f"✅ Paired mode detected: {len(intersect_keys)}/{len(keyset1)} and {len(intersect_keys)}/{len(keyset2)} files match")
             return True
         else:
-            print(
-                "-Two path have %s intersection files out of total %s & %s files. Processing two folder with same_name=False"
-                % (len(intersect_keys), len(keyset1), len(keyset2))
-            )
+            eval_logger.info(f"📊 Unpaired mode detected: {len(intersect_keys)}/{len(keyset1)} and {len(intersect_keys)}/{len(keyset2)} files match")
             return False
 
     def calculate_lsd(self, pairedloader, same_name=True, time_offset=160 * 7):
@@ -263,20 +317,41 @@ class EvaluationHelper:
         
         out.update(metric_kl)
 
-        metric_isc = calculate_isc(
-            featuresdict_1,
-            feat_layer_name="logits",
-            splits=10,
-            samples_shuffle=True,
-            rng_seed=2020,
-        )
-        out.update(metric_isc)
+        # Check minimum sample requirements for ISC
+        features_1_logits = featuresdict_1["logits"]
+        eval_logger.debug(f"📊 Feature shape for ISC: {features_1_logits.shape}")
+        
+        if features_1_logits.shape[0] < 2:
+            eval_logger.warning(f"⚠️ Insufficient samples for ISC calculation: {features_1_logits.shape[0]} samples (need ≥2)")
+            out.update({"inception_score": float('inf'), "isc_error": "Insufficient samples for ISC calculation (need ≥2)"})
+        else:
+            eval_logger.debug(f"✅ Sufficient samples for ISC calculation, proceeding...")
+            metric_isc = calculate_isc(
+                featuresdict_1,
+                feat_layer_name="logits",
+                splits=10,
+                samples_shuffle=True,
+                rng_seed=2020,
+            )
+            out.update(metric_isc)
 
         if("2048" in featuresdict_1.keys() and "2048" in featuresdict_2.keys()):
-            metric_fid = calculate_fid(
-                featuresdict_1, featuresdict_2, feat_layer_name="2048"
-            )
-            out.update(metric_fid)
+            eval_logger.debug(f"🔍 Checking FID calculation requirements...")
+            features_1_2048 = featuresdict_1["2048"]
+            features_2_2048 = featuresdict_2["2048"]
+            
+            eval_logger.debug(f"📊 Feature shapes for FID: {features_1_2048.shape}, {features_2_2048.shape}")
+            
+            # Check minimum sample requirements for FID
+            if features_1_2048.shape[0] < 2 or features_2_2048.shape[0] < 2:
+                eval_logger.warning(f"⚠️ Insufficient samples for FID calculation: {features_1_2048.shape[0]} and {features_2_2048.shape[0]} samples (need ≥2 each)")
+                out.update({"frechet_distance": float('inf'), "fid_error": "Insufficient samples for FID calculation (need ≥2 each)"})
+            else:
+                eval_logger.debug(f"✅ Sufficient samples for FID calculation, proceeding...")
+                metric_fid = calculate_fid(
+                    featuresdict_1, featuresdict_2, feat_layer_name="2048"
+                )
+                out.update(metric_fid)
 
         # Metrics for Autoencoder
         ######################################################################################################################
@@ -304,20 +379,44 @@ class EvaluationHelper:
             metric_psnr_ssim = self.calculate_psnr_ssim(pairedloader, same_name=same_name)
             out.update(metric_psnr_ssim)
 
-        # metric_kid = calculate_kid(
-        #     featuresdict_1,
-        #     featuresdict_2,
-        #     feat_layer_name="2048",
-        #     subsets=100,
-        #     subset_size=1000,
-        #     degree=3,
-        #     gamma=None,
-        #     coef0=1,
-        #     rng_seed=2020,
-        # )
-        # out.update(metric_kid)
+        # KID calculation with validation
+        if("2048" in featuresdict_1.keys() and "2048" in featuresdict_2.keys()):
+            eval_logger.debug(f"🔍 Checking KID calculation requirements...")
+            features_1_2048 = featuresdict_1["2048"]
+            features_2_2048 = featuresdict_2["2048"]
+            
+            eval_logger.debug(f"📊 Feature shapes for KID: {features_1_2048.shape}, {features_2_2048.shape}")
+            
+            # Check minimum sample requirements for KID (needs more samples than FID)
+            min_samples_kid = 10  # KID typically needs more samples
+            if features_1_2048.shape[0] < min_samples_kid or features_2_2048.shape[0] < min_samples_kid:
+                eval_logger.warning(f"⚠️ Insufficient samples for KID calculation: {features_1_2048.shape[0]} and {features_2_2048.shape[0]} samples (need ≥{min_samples_kid} each)")
+                out.update({"kernel_inception_distance": float('inf'), "kid_error": f"Insufficient samples for KID calculation (need ≥{min_samples_kid} each)"})
+            else:
+                eval_logger.debug(f"✅ Sufficient samples for KID calculation, proceeding...")
+                # metric_kid = calculate_kid(
+                #     featuresdict_1,
+                #     featuresdict_2,
+                #     feat_layer_name="2048",
+                #     subsets=100,
+                #     subset_size=1000,
+                #     degree=3,
+                #     gamma=None,
+                #     coef0=1,
+                #     rng_seed=2020,
+                # )
+                # out.update(metric_kid)
+                eval_logger.info(f"📊 KID calculation would proceed with {features_1_2048.shape[0]} and {features_2_2048.shape[0]} samples")
 
-        print("\n".join((f"{k}: {v:.7f}" for k, v in out.items())))
+        # Print metrics with proper formatting for different data types
+        for k, v in out.items():
+            if isinstance(v, (int, float)):
+                if np.isinf(v) or np.isnan(v):
+                    print(f"{k}: {v}")
+                else:
+                    print(f"{k}: {v:.7f}")
+            else:
+                print(f"{k}: {v}")
         print("\n")
         print(limit_num)
         print(

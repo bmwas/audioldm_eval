@@ -198,7 +198,7 @@ class NDB:
             height=train_se * 2.0,
             bottom=self.bin_proportions - train_se,
             width=1.0,
-            label="Train$\pm$SE",
+            label=r"Train$\pm$SE",
             color="gray",
         )
 

@@ -1,9 +1,13 @@
 import torch
 import os
+import logging
 import numpy as np
 import torchaudio
 from tqdm import tqdm
 # import librosa
+
+# Configure logging for dataset module
+dataset_logger = logging.getLogger(__name__)
 
 def pad_short_audio(audio, min_samples=32000):
     if(audio.size(-1) < min_samples):
@@ -22,21 +26,35 @@ class MelPairedDataset(torch.utils.data.Dataset):
         augment=False,
         limit_num=None,
     ):
+        dataset_logger.info(f"🔧 Initializing MelPairedDataset with sr={sr}, augment={augment}, limit_num={limit_num}")
+        dataset_logger.debug(f"📁 Directory 1: {datadir1}")
+        dataset_logger.debug(f"📁 Directory 2: {datadir2}")
+        
+        # Load file lists
         self.datalist1 = [os.path.join(datadir1, x) for x in os.listdir(datadir1)]
         self.datalist1 = sorted(self.datalist1)
+        dataset_logger.debug(f"📊 Directory 1 files ({len(self.datalist1)}): {[os.path.basename(x) for x in self.datalist1[:5]]}{'...' if len(self.datalist1) > 5 else ''}")
 
         self.datalist2 = [os.path.join(datadir2, x) for x in os.listdir(datadir2)]
         self.datalist2 = sorted(self.datalist2)
+        dataset_logger.debug(f"📊 Directory 2 files ({len(self.datalist2)}): {[os.path.basename(x) for x in self.datalist2[:5]]}{'...' if len(self.datalist2) > 5 else ''}")
 
+        # Apply limit if specified
         if limit_num is not None:
+            original_len1, original_len2 = len(self.datalist1), len(self.datalist2)
             self.datalist1 = self.datalist1[:limit_num]
             self.datalist2 = self.datalist2[:limit_num]
+            dataset_logger.info(f"🔢 Applied limit: {original_len1}->{len(self.datalist1)}, {original_len2}->{len(self.datalist2)}")
 
+        # Align file lists
+        dataset_logger.debug(f"🔗 Aligning file lists...")
         self.align_two_file_list()
 
         self._stft = _stft
         self.sr = sr
         self.augment = augment
+
+        dataset_logger.info(f"✅ MelPairedDataset initialized with {len(self.datalist1)} aligned file pairs")
 
         # if fbin_mean is not None:
         #     self.fbin_mean = fbin_mean[..., None]
@@ -46,18 +64,26 @@ class MelPairedDataset(torch.utils.data.Dataset):
         #     self.fbin_std = None
 
     def align_two_file_list(self):
+        dataset_logger.debug(f"🔗 Starting file alignment...")
+        
         data_dict1 = {os.path.basename(x): x for x in self.datalist1}
         data_dict2 = {os.path.basename(x): x for x in self.datalist2}
 
         keyset1 = set(data_dict1.keys())
         keyset2 = set(data_dict2.keys())
+        
+        dataset_logger.debug(f"🔑 Unique filenames in dir1: {len(keyset1)}")
+        dataset_logger.debug(f"🔑 Unique filenames in dir2: {len(keyset2)}")
 
         intersect_keys = keyset1.intersection(keyset2)
+        dataset_logger.debug(f"🔗 Intersecting filenames: {len(intersect_keys)}")
+        dataset_logger.debug(f"🔗 Intersecting files: {sorted(list(intersect_keys))[:10]}{'...' if len(intersect_keys) > 10 else ''}")
 
         self.datalist1 = [data_dict1[k] for k in intersect_keys]
         self.datalist2 = [data_dict2[k] for k in intersect_keys]
 
-        print("Two path have %s intersection files" % len(intersect_keys))
+        dataset_logger.info(f"✅ File alignment complete: {len(intersect_keys)} intersection files")
+        dataset_logger.debug(f"📊 Final aligned lists: {len(self.datalist1)} files each")
 
     def __getitem__(self, index):
         while True:

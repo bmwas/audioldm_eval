@@ -6,6 +6,7 @@ Frechet distance implementation adapted from: https://github.com/mseitzer/pytorc
 VGGish adapted from: https://github.com/harritaylor/torchvggish
 """
 import os
+import logging
 import numpy as np
 import torch
 
@@ -15,6 +16,9 @@ from tqdm import tqdm
 from multiprocessing.dummy import Pool as ThreadPool
 from audioldm_eval.datasets.load_mel import WaveDataset
 from torch.utils.data import DataLoader
+
+# Configure logging for FAD metrics
+fad_logger = logging.getLogger(__name__)
 
 class FrechetAudioDistance:
     def __init__(
@@ -88,10 +92,19 @@ class FrechetAudioDistance:
         return np.concatenate(embd_lst, axis=0)
 
     def calculate_embd_statistics(self, embd_lst):
+        fad_logger.debug(f"📊 Calculating embedding statistics for {len(embd_lst)} embeddings")
+        
         if isinstance(embd_lst, list):
             embd_lst = np.array(embd_lst)
+            fad_logger.debug(f"🔄 Converted list to numpy array, shape: {embd_lst.shape}")
+        
         mu = np.mean(embd_lst, axis=0)
         sigma = np.cov(embd_lst, rowvar=False)
+        
+        fad_logger.debug(f"📊 Statistics calculated - mu shape: {mu.shape}, sigma shape: {sigma.shape}")
+        fad_logger.debug(f"📊 Mean range: [{mu.min():.4f}, {mu.max():.4f}]")
+        fad_logger.debug(f"📊 Sigma range: [{sigma.min():.4f}, {sigma.max():.4f}]")
+        
         return mu, sigma
 
     def calculate_frechet_distance(self, mu1, sigma1, mu2, sigma2, eps=1e-6):
@@ -105,22 +118,25 @@ class FrechetAudioDistance:
         Stable version by Dougal J. Sutherland.
         Params:
         -- mu1   : Numpy array containing the activations of a layer of the
-                inception net (like returned by the function 'get_predictions')
-                for generated samples.
+                   inception net (like returned by the function 'get_predictions')
+                   for generated samples.
         -- mu2   : The sample mean over activations, precalculated on an
-                representative data set.
+                   representative data set.
         -- sigma1: The covariance matrix over activations for generated samples.
         -- sigma2: The covariance matrix over activations, precalculated on an
-                representative data set.
+                   representative data set.
         Returns:
         --   : The Frechet Distance.
         """
+        fad_logger.debug(f"🔢 Calculating Frechet distance with eps={eps}")
 
         mu1 = np.atleast_1d(mu1)
         mu2 = np.atleast_1d(mu2)
 
         sigma1 = np.atleast_2d(sigma1)
         sigma2 = np.atleast_2d(sigma2)
+
+        fad_logger.debug(f"📊 Input shapes - mu1: {mu1.shape}, mu2: {mu2.shape}, sigma1: {sigma1.shape}, sigma2: {sigma2.shape}")
 
         assert (
             mu1.shape == mu2.shape
@@ -130,6 +146,7 @@ class FrechetAudioDistance:
         ), "Training and test covariances have different dimensions"
 
         diff = mu1 - mu2
+        fad_logger.debug(f"📊 Mean difference norm: {np.linalg.norm(diff):.6f}")
 
         # Product might be almost singular
         covmean, _ = linalg.sqrtm(sigma1.dot(sigma2), disp=False)
@@ -138,7 +155,7 @@ class FrechetAudioDistance:
                 "fid calculation produces singular product; "
                 "adding %s to diagonal of cov estimates"
             ) % eps
-            print(msg)
+            fad_logger.warning(f"⚠️ {msg}")
             offset = np.eye(sigma1.shape[0]) * eps
             covmean = linalg.sqrtm((sigma1 + offset).dot(sigma2 + offset))
 
@@ -146,12 +163,19 @@ class FrechetAudioDistance:
         if np.iscomplexobj(covmean):
             if not np.allclose(np.diagonal(covmean).imag, 0, atol=1e-3):
                 m = np.max(np.abs(covmean.imag))
+                fad_logger.error(f"❌ Imaginary component {m}")
                 raise ValueError("Imaginary component {}".format(m))
             covmean = covmean.real
+            fad_logger.debug(f"🔄 Converted complex covmean to real")
 
         tr_covmean = np.trace(covmean)
+        fad_logger.debug(f"📊 Trace of covmean: {tr_covmean:.6f}")
 
-        return diff.dot(diff) + np.trace(sigma1) + np.trace(sigma2) - 2 * tr_covmean
+        frechet_dist = diff.dot(diff) + np.trace(sigma1) + np.trace(sigma2) - 2 * tr_covmean
+        fad_logger.debug(f"📊 Frechet distance components - diff^2: {diff.dot(diff):.6f}, tr(sigma1): {np.trace(sigma1):.6f}, tr(sigma2): {np.trace(sigma2):.6f}")
+        fad_logger.info(f"✅ Frechet distance calculated: {frechet_dist:.6f}")
+
+        return frechet_dist
 
     def score(self, background_dir, eval_dir, store_embds=False, limit_num=None, recalculate = False): 
         # background_dir: generated samples

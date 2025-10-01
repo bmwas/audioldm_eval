@@ -9,6 +9,7 @@ Supports both paired and unpaired evaluation modes.
 import os
 import shutil
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -16,6 +17,7 @@ import json
 import logging
 import asyncio
 from threading import Lock
+import numpy as np
 
 import torch
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
@@ -467,38 +469,75 @@ async def evaluate_audio(
         # Save uploaded files
         generated_filenames = []
         total_generated_size = 0
+        api_logger.debug(f"📁 Starting to save {len(generated_files)} generated files for job {job_id}")
         for i, file in enumerate(generated_files):
+            api_logger.debug(f"🔍 Processing generated file {i+1}/{len(generated_files)}: filename='{file.filename}', content_type='{file.content_type}'")
             if not file.filename:
                 api_logger.warning(f"⚠️ Skipping generated file {i} with no filename in job {job_id}")
                 continue
             file_path = generated_dir / file.filename
-            api_logger.debug(f"💾 Saving generated file: {file.filename}")
-            with open(file_path, "wb") as f:
-                content = await file.read()
-                f.write(content)
-                total_generated_size += len(content)
-            generated_filenames.append(file.filename)
+            api_logger.debug(f"💾 Saving generated file: {file.filename} to {file_path}")
+            try:
+                with open(file_path, "wb") as f:
+                    content = await file.read()
+                    f.write(content)
+                    total_generated_size += len(content)
+                api_logger.debug(f"✅ Successfully saved generated file: {file.filename} ({len(content)} bytes)")
+                generated_filenames.append(file.filename)
+            except Exception as e:
+                api_logger.error(f"❌ Failed to save generated file {file.filename}: {e}")
+                raise
         
         reference_filenames = []
         total_reference_size = 0
+        api_logger.debug(f"📁 Starting to save {len(reference_files)} reference files for job {job_id}")
         for i, file in enumerate(reference_files):
+            api_logger.debug(f"🔍 Processing reference file {i+1}/{len(reference_files)}: filename='{file.filename}', content_type='{file.content_type}'")
             if not file.filename:
                 api_logger.warning(f"⚠️ Skipping reference file {i} with no filename in job {job_id}")
                 continue
             file_path = reference_dir / file.filename
-            api_logger.debug(f"💾 Saving reference file: {file.filename}")
-            with open(file_path, "wb") as f:
-                content = await file.read()
-                f.write(content)
-                total_reference_size += len(content)
-            reference_filenames.append(file.filename)
+            api_logger.debug(f"💾 Saving reference file: {file.filename} to {file_path}")
+            try:
+                with open(file_path, "wb") as f:
+                    content = await file.read()
+                    f.write(content)
+                    total_reference_size += len(content)
+                api_logger.debug(f"✅ Successfully saved reference file: {file.filename} ({len(content)} bytes)")
+                reference_filenames.append(file.filename)
+            except Exception as e:
+                api_logger.error(f"❌ Failed to save reference file {file.filename}: {e}")
+                raise
         
         file_save_end = time.time()
         file_save_duration = file_save_end - file_save_start
         
         api_logger.info(f"✅ File upload completed for job {job_id} in {file_save_duration:.2f}s")
         api_logger.info(f"📊 File sizes - Generated: {total_generated_size/1024/1024:.2f}MB, Reference: {total_reference_size/1024/1024:.2f}MB")
+        api_logger.info(f"📋 Final file lists - Generated: {generated_filenames}, Reference: {reference_filenames}")
         perf_logger.info(f"File upload for job {job_id}: {file_save_duration:.2f}s, {(total_generated_size + total_reference_size)/1024/1024:.2f}MB total")
+        
+        # Verify files exist on disk
+        api_logger.debug(f"🔍 Verifying files exist on disk for job {job_id}...")
+        for filename in generated_filenames:
+            file_path = generated_dir / filename
+            if file_path.exists():
+                file_size = file_path.stat().st_size
+                api_logger.debug(f"✅ Generated file verified: {filename} ({file_size} bytes)")
+            else:
+                api_logger.error(f"❌ Generated file missing on disk: {filename}")
+                raise FileNotFoundError(f"Generated file not found: {filename}")
+        
+        for filename in reference_filenames:
+            file_path = reference_dir / filename
+            if file_path.exists():
+                file_size = file_path.stat().st_size
+                api_logger.debug(f"✅ Reference file verified: {filename} ({file_size} bytes)")
+            else:
+                api_logger.error(f"❌ Reference file missing on disk: {filename}")
+                raise FileNotFoundError(f"Reference file not found: {filename}")
+        
+        api_logger.debug(f"✅ All files verified on disk for job {job_id}")
         
         # Determine evaluation mode (paired vs unpaired)
         api_logger.debug(f"🔍 Determining evaluation mode for job {job_id}...")
@@ -542,11 +581,35 @@ async def evaluate_audio(
         pre_eval_stats = get_system_stats()
         system_logger.debug(f"Pre-evaluation system stats for job {job_id}: {pre_eval_stats}")
         
-        metrics_result = evaluator.main(
-            generate_files_path=str(generated_dir),
-            groundtruth_path=str(reference_dir),
-            limit_num=limit_num
-        )
+        # Final directory verification before evaluation
+        api_logger.debug(f"🔍 Final directory verification for job {job_id}...")
+        generated_files_on_disk = list(generated_dir.glob("*"))
+        reference_files_on_disk = list(reference_dir.glob("*"))
+        api_logger.debug(f"📁 Generated files on disk: {[f.name for f in generated_files_on_disk]}")
+        api_logger.debug(f"📁 Reference files on disk: {[f.name for f in reference_files_on_disk]}")
+        api_logger.debug(f"📊 File counts - Generated: {len(generated_files_on_disk)}, Reference: {len(reference_files_on_disk)}")
+        
+        if len(generated_files_on_disk) == 0:
+            api_logger.error(f"❌ No generated files found on disk in {generated_dir}")
+            raise FileNotFoundError(f"No generated files found in {generated_dir}")
+        if len(reference_files_on_disk) == 0:
+            api_logger.error(f"❌ No reference files found on disk in {reference_dir}")
+            raise FileNotFoundError(f"No reference files found in {reference_dir}")
+        
+        api_logger.info(f"✅ Directory verification passed for job {job_id}")
+        
+        try:
+            api_logger.debug(f"🔄 Calling evaluator.main() for job {job_id}...")
+            metrics_result = evaluator.main(
+                generate_files_path=str(generated_dir),
+                groundtruth_path=str(reference_dir),
+                limit_num=limit_num
+            )
+            api_logger.debug(f"✅ evaluator.main() completed successfully for job {job_id}")
+        except Exception as e:
+            api_logger.error(f"❌ evaluator.main() failed for job {job_id}: {e}")
+            api_logger.debug(f"Exception details for job {job_id}:", exc_info=True)
+            raise
         
         eval_end = time.time()
         eval_duration = eval_end - eval_start
@@ -569,6 +632,24 @@ async def evaluate_audio(
                         filtered_result[key] = value
                         break
             metrics_result = filtered_result
+        
+        # Check for error indicators in metrics and provide user-friendly messages
+        api_logger.debug(f"🔍 Checking for error indicators in metrics results...")
+        error_metrics = []
+        for key, value in metrics_result.items():
+            if isinstance(value, float) and (np.isinf(value) or np.isnan(value)):
+                if 'error' in key.lower() or 'fid_error' in key.lower() or 'isc_error' in key.lower() or 'kid_error' in key.lower():
+                    error_metrics.append(f"{key}: {value}")
+                    api_logger.warning(f"⚠️ Metric error detected: {key} = {value}")
+        
+        if error_metrics:
+            api_logger.warning(f"⚠️ Found {len(error_metrics)} metric errors: {error_metrics}")
+            # Add a summary message to the results
+            metrics_result["evaluation_warnings"] = {
+                "insufficient_samples": "Some metrics require multiple samples for accurate calculation",
+                "affected_metrics": error_metrics,
+                "recommendation": "Provide at least 2 samples for FID/ISC, 10+ samples for KID"
+            }
         
         # Update job status
         evaluation_jobs[job_id] = EvaluationResponse(
@@ -596,7 +677,13 @@ async def evaluate_audio(
         # Cleanup temporary files
         shutil.rmtree(job_dir)
         
-        return evaluation_jobs[job_id]
+        # Debug: Log the response structure
+        response_data = evaluation_jobs[job_id]
+        api_logger.debug(f"📊 Returning response for job {job_id}: {response_data}")
+        api_logger.debug(f"📊 Response type: {type(response_data)}")
+        api_logger.debug(f"📊 Response dict: {response_data.dict() if hasattr(response_data, 'dict') else 'No dict method'}")
+        
+        return response_data
         
     except Exception as e:
         logger.error(f"Evaluation failed for job {job_id}: {e}")
